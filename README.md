@@ -150,6 +150,57 @@ Validates Notion API configuration and database schema.
 
 ---
 
+## Example API Response
+
+### `POST /canvas/ingest/{course_id}`
+
+```json
+{
+  "course_id": "189793",
+  "changed": true,
+  "snapshot_id": 1,
+  "assignment_snapshot_id": 1,
+  "items": [
+    {
+      "title": "Exam 1",
+      "item_type": "exam",
+      "subtype": "midterm",
+      "start_date": "2026-02-23",
+      "due_date": null,
+      "description": "Covers Modules 1-3.",
+      "location": "SHW-011",
+      "external_id": "exam_1",
+      "confidence": 1.0,
+      "item_hash": "a9a6bcf5ecba8b7ae2c2a2e5570ded162000e5d110fdfe214c15cbad4a8547ec"
+    },
+    {
+      "title": "Homework 3",
+      "item_type": "assignment",
+      "subtype": "homework",
+      "start_date": null,
+      "due_date": "2026-02-10",
+      "description": "Covers Chapter 5 problems.",
+      "location": null,
+      "external_id": "12345",
+      "confidence": 0.98,
+      "item_hash": "b71e9c6d9e2d7a1d6d5e9b2f9a7e6d5c4b3a2910e8f7d6c5b4a3928171615141"
+    }
+  ],
+  "sources": {
+    "syllabus_changed": true,
+    "assignment_feed_changed": true
+  },
+  "notion_sync": {
+    "attempted": true,
+    "created": 2,
+    "skipped": 0,
+    "failed": 0
+  }
+}
+```
+
+---
+
 ## Environment Variables
 
 Set the following before running:
