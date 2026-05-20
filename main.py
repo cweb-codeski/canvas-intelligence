@@ -6,7 +6,7 @@ from typing import List, Optional, Tuple
 
 import requests
 from docx import Document
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from jsonschema import ValidationError, validate
 from openai import OpenAI
 from pydantic import BaseModel
@@ -536,6 +536,30 @@ def extract_text_from_docx_bytes(data: bytes) -> str:
             parts.append(p.text.strip())
     return "\n".join(parts).strip()
 
+
+def extract_text_from_manual_upload(filename: str, data: bytes) -> str:
+    lower_name = (filename or "").lower()
+    if not any(lower_name.endswith(ext) for ext in MANUAL_SYLLABUS_FILE_EXTENSIONS):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Supported types: .txt, .pdf, .docx",
+        )
+
+    if lower_name.endswith(".txt"):
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not decode .txt file as UTF-8",
+            ) from exc
+
+    if lower_name.endswith(".pdf"):
+        return extract_text_from_pdf_bytes(data)
+
+    return extract_text_from_docx_bytes(data)
+
+
 def complete_missing_exam_dates(course_id: str, exams: list) -> list:
     """
     If some exams have date == None, fetch schedule-like pages from Canvas and
@@ -804,7 +828,10 @@ SYLLABUS_SNAPSHOT_SOURCE_TYPES = (
     "file",
     "modules",
     "manual_text",
+    "manual_file",
 )
+
+MANUAL_SYLLABUS_FILE_EXTENSIONS = (".txt", ".pdf", ".docx")
 
 
 def get_latest_syllabus_snapshot(db: Session, course_id: int):
@@ -1430,6 +1457,47 @@ def ingest_manual_syllabus(
         source_type="manual_text",
         source_name="manual_paste",
         source_identifier=req.course_key,
+        sync_to_notion=sync_to_notion,
+        parse_source="manual",
+    )
+
+
+@app.post("/manual/syllabus/file")
+async def ingest_manual_syllabus_file(
+    course_key: str = Form(...),
+    course_name: Optional[str] = Form(None),
+    term: Optional[str] = Form(None),
+    sync_to_notion: bool = Form(True),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    filename = (file.filename or "").strip() or "uploaded_file"
+    raw_bytes = await file.read()
+
+    extracted_text = extract_text_from_manual_upload(filename, raw_bytes)
+    text = extracted_text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No syllabus text provided")
+
+    resolved_course_name = course_name or course_key
+    course = get_or_create_course(db, course_key, resolved_course_name)
+
+    if term:
+        course.term = term
+        db.commit()
+        db.refresh(course)
+
+    source_identifier = f"{course_key}:{filename}"
+
+    return ingest_syllabus_text(
+        db=db,
+        course=course,
+        course_id=course_key,
+        course_name=resolved_course_name,
+        final_text=text,
+        source_type="manual_file",
+        source_name=filename,
+        source_identifier=source_identifier,
         sync_to_notion=sync_to_notion,
         parse_source="manual",
     )
