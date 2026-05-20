@@ -376,6 +376,32 @@ def download_file(file_url: str) -> bytes:
         raise HTTPException(status_code=resp.status_code, detail=f"Canvas File download error: {resp.text}")
     return resp.content
 
+def fetch_paginated_course_modules(url: str, headers: dict) -> list:
+    results = []
+
+    while url:
+        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Canvas Modules API error: {response.text}"
+            )
+
+        data = response.json()
+
+        if not isinstance(data, list):
+            raise HTTPException(
+                status_code=500,
+                detail="Canvas Modules API returned unexpected data format"
+            )
+
+        results.extend(data)
+        url = get_next_link(response)
+
+    return results
+
+
 def fetch_course_modules(course_id: str) -> list:
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/modules?include[]=items&per_page=100"
 
@@ -383,23 +409,7 @@ def fetch_course_modules(course_id: str) -> list:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Canvas Modules API error: {response.text}"
-        )
-
-    data = response.json()
-
-    if not isinstance(data, list):
-        raise HTTPException(
-            status_code=500,
-            detail="Canvas Modules API returned unexpected data format"
-        )
-
-    return data
+    return fetch_paginated_course_modules(url, headers)
 
 
 def find_syllabus_file_in_modules(course_id: str) -> Optional[dict]:
