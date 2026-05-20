@@ -8,3 +8,7 @@ python-docx
 pypdf
 python-multipart
 sqlalchemy
+
+# Dev / test
+pytest
+ruff
