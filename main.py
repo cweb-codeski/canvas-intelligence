@@ -169,6 +169,36 @@ def fetch_syllabus(course_id: str) -> str:
 
     return syllabus
 
+def fetch_paginated_course_pages(url: str, headers: dict, course_id: str) -> list:
+    results = []
+
+    while url:
+        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+
+        if response.status_code != 200:
+            # If pages are disabled for this course, return empty list instead of failing
+            if "disabled" in response.text.lower():
+                print(f"[INFO] Pages disabled for course {course_id}. Skipping page lookup.")
+                return []
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Canvas Pages API error: {response.text}"
+            )
+
+        data = response.json()
+
+        if not isinstance(data, list):
+            raise HTTPException(
+                status_code=500,
+                detail="Canvas Pages API returned unexpected data format"
+            )
+
+        results.extend(data)
+        url = get_next_link(response)
+
+    return results
+
+
 def fetch_course_pages(course_id: str):
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/pages"
 
@@ -176,19 +206,7 @@ def fetch_course_pages(course_id: str):
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
-
-    if response.status_code != 200:
-        # If pages are disabled for this course, return empty list instead of failing
-        if "disabled" in response.text.lower():
-            print(f"[INFO] Pages disabled for course {course_id}. Skipping page lookup.")
-            return []
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Canvas Pages API error: {response.text}"
-        )
-
-    return response.json()
+    return fetch_paginated_course_pages(url, headers, course_id)
 
 def get_next_link(response) -> Optional[str]:
     link_header = response.headers.get("Link")
