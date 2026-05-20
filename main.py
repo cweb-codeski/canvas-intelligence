@@ -37,6 +37,8 @@ canvas_token = os.environ.get("CANVAS_ACCESS_TOKEN")
 if not canvas_base_url or not canvas_token:
     raise RuntimeError("Canvas environment variables not set")
 
+REQUEST_TIMEOUT_SECONDS = 10
+
 client = OpenAI(api_key=api_key)
 
 # ----- Request Model -----
@@ -131,7 +133,7 @@ def fetch_course_name(course_id: str):
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         return course_id
@@ -147,7 +149,7 @@ def fetch_syllabus(course_id: str) -> str:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(
@@ -174,7 +176,7 @@ def fetch_course_pages(course_id: str):
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         # If pages are disabled for this course, return empty list instead of failing
@@ -195,7 +197,7 @@ def fetch_canvas_assignments(course_id: str) -> list:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(
@@ -220,7 +222,7 @@ def fetch_page_body(course_id: str, page_url: str) -> str:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(
@@ -317,14 +319,14 @@ def extract_file_id_from_html(html: str) -> Optional[str]:
 def fetch_file_metadata(file_id: str) -> dict:
     url = f"{canvas_base_url}/api/v1/files/{file_id}"
     headers = {"Authorization": f"Bearer {canvas_token}"}
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=f"Canvas File API error: {resp.text}")
     return resp.json()
 
 def download_file(file_url: str) -> bytes:
     headers = {"Authorization": f"Bearer {canvas_token}"}
-    resp = requests.get(file_url, headers=headers)
+    resp = requests.get(file_url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=f"Canvas File download error: {resp.text}")
     return resp.content
@@ -336,7 +338,7 @@ def fetch_course_modules(course_id: str) -> list:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(

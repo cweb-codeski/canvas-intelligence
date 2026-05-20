@@ -12,6 +12,7 @@ if ENABLE_NOTION_SYNC:
         raise RuntimeError("NOTION_DATABASE_ID environment variable not set")
 
 NOTION_API_URL = "https://api.notion.com/v1"
+REQUEST_TIMEOUT_SECONDS = 10
 
 headers = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
@@ -34,7 +35,7 @@ def check_notion_config():
         }
 
     url = f"{NOTION_API_URL}/databases/{NOTION_DATABASE_ID}"
-    response = requests.get(url, headers=headers, timeout=10)
+    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code == 401:
         return {
@@ -187,7 +188,7 @@ def create_notion_item(item, course_name):
         }
 
     url = "https://api.notion.com/v1/pages"
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if not response.ok:
         msg = response.text
@@ -222,7 +223,7 @@ def item_exists(item_hash):
         }
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if not response.ok:
         print("Query error:", response.text)
