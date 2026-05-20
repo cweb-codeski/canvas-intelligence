@@ -730,6 +730,26 @@ def build_assignment_feed_text(assignments: list) -> str:
     return "\n".join(lines)
 
 
+SYLLABUS_SNAPSHOT_SOURCE_TYPES = (
+    "syllabus_body",
+    "page",
+    "file",
+    "modules",
+)
+
+
+def get_latest_syllabus_snapshot(db: Session, course_id: int):
+    return (
+        db.query(SourceSnapshot)
+        .filter(
+            SourceSnapshot.course_id == course_id,
+            SourceSnapshot.source_type.in_(SYLLABUS_SNAPSHOT_SOURCE_TYPES),
+        )
+        .order_by(SourceSnapshot.created_at.desc())
+        .first()
+    )
+
+
 def persist_canvas_assignment_items(
     db: Session,
     course: Course,
@@ -1082,12 +1102,7 @@ def ingest_canvas_course(
     normalized = normalize_text(final_text)
     content_hash = hash_text(normalized)
 
-    latest_snapshot = (
-        db.query(SourceSnapshot)
-        .filter(SourceSnapshot.course_id == course.id)
-        .order_by(SourceSnapshot.created_at.desc())
-        .first()
-    )
+    latest_snapshot = get_latest_syllabus_snapshot(db, course.id)
 
     if latest_snapshot and latest_snapshot.content_hash == content_hash:
         cached_items = (
