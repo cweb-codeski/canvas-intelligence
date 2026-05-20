@@ -871,6 +871,16 @@ def sync_items_to_notion(items: list, course_name: str) -> dict:
     return notion_results
 
 
+def notion_config_for_response(sync_to_notion: bool) -> dict:
+    if not sync_to_notion:
+        return {
+            "status": "not_checked",
+            "reason": "sync_to_notion disabled",
+        }
+
+    return check_notion_config()
+
+
 def notion_sync_for_unchanged_syllabus(assignment_result: dict, course_name: str) -> dict:
     if assignment_result.get("changed", False):
         return sync_items_to_notion(assignment_result.get("items", []), course_name)
@@ -966,7 +976,7 @@ def ingest_syllabus_text(
                 "assignment_feed_changed": assignment_result.get("changed", False),
             },
             "notion_sync": notion_sync,
-            "notion_config": check_notion_config(),
+            "notion_config": notion_config_for_response(sync_to_notion),
         }
 
     req = ParseRequest(
@@ -1050,7 +1060,7 @@ def ingest_syllabus_text(
             "assignment_feed_changed": assignment_result.get("changed", False),
         },
         "notion_sync": notion_sync,
-        "notion_config": check_notion_config(),
+        "notion_config": notion_config_for_response(sync_to_notion),
     }
 
 
