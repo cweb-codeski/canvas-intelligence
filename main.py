@@ -750,6 +750,40 @@ def get_latest_syllabus_snapshot(db: Session, course_id: int):
     )
 
 
+def sync_items_to_notion(items: list, course_name: str) -> dict:
+    notion_results = {
+        "attempted": True,
+        "created": 0,
+        "skipped": 0,
+        "failed": 0,
+        "results": [],
+    }
+
+    for item in items:
+        sync_result = create_notion_item(item, course_name)
+        notion_results["results"].append(sync_result)
+
+        status = sync_result.get("status")
+        if status == "created":
+            notion_results["created"] += 1
+        elif status == "skipped":
+            notion_results["skipped"] += 1
+        else:
+            notion_results["failed"] += 1
+
+    return notion_results
+
+
+def notion_sync_for_unchanged_syllabus(assignment_result: dict, course_name: str) -> dict:
+    if assignment_result.get("changed", False):
+        return sync_items_to_notion(assignment_result.get("items", []), course_name)
+
+    return {
+        "attempted": False,
+        "reason": "syllabus unchanged; assignment feed handled separately",
+    }
+
+
 def persist_canvas_assignment_items(
     db: Session,
     course: Course,
@@ -1139,10 +1173,7 @@ def ingest_canvas_course(
                 "syllabus_changed": False,
                 "assignment_feed_changed": assignment_result.get("changed", False)
             },
-            "notion_sync": {
-                "attempted": False,
-                "reason": "syllabus unchanged; assignment feed handled separately"
-            },
+            "notion_sync": notion_sync_for_unchanged_syllabus(assignment_result, course_name),
             "notion_config": check_notion_config()
         }
 
@@ -1217,25 +1248,7 @@ def ingest_canvas_course(
 
     all_response_items = response_items + assignment_result.get("items", [])
 
-    notion_results = {
-        "attempted": True,
-        "created": 0,
-        "skipped": 0,
-        "failed": 0,
-        "results": []
-    }
-
-    for item in all_response_items:
-        sync_result = create_notion_item(item, course_name)
-        notion_results["results"].append(sync_result)
-
-        status = sync_result.get("status")
-        if status == "created":
-            notion_results["created"] += 1
-        elif status == "skipped":
-            notion_results["skipped"] += 1
-        else:
-            notion_results["failed"] += 1
+    notion_results = sync_items_to_notion(all_response_items, course_name)
 
     return {
         "course_id": course_id,
