@@ -6,12 +6,15 @@ os.environ.setdefault("CANVAS_BASE_URL", "https://example.instructure.com")
 os.environ.setdefault("CANVAS_ACCESS_TOKEN", "test-canvas-token")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
 
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from db import Base
-from main import ingest_syllabus_text
+from main import app, ingest_syllabus_text
 from models import Course, Item, SourceSnapshot
+
+client = TestClient(app)
 
 
 def _make_session():
@@ -113,3 +116,16 @@ def test_changed_manual_text_creates_new_snapshot(mock_parse):
     assert second["snapshot_id"] != first["snapshot_id"]
     assert db.query(SourceSnapshot).count() == 2
     assert mock_parse.call_count == 2
+
+
+def test_manual_syllabus_whitespace_only_returns_400():
+    response = client.post(
+        "/manual/syllabus",
+        json={
+            "course_key": "manual-101",
+            "text": "   \n\t  ",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No syllabus text provided"
