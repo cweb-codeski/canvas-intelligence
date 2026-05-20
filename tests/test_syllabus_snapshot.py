@@ -43,6 +43,7 @@ def test_syllabus_snapshot_types_exclude_assignment_feed():
         "page",
         "file",
         "modules",
+        "manual_text",
     }
 
 

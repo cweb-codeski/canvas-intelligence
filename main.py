@@ -46,6 +46,14 @@ class ParseRequest(BaseModel):
     source: str
     text: Optional[str] = None
 
+
+class ManualSyllabusRequest(BaseModel):
+    course_key: str
+    course_name: Optional[str] = None
+    term: Optional[str] = None
+    text: str
+    sync_to_notion: Optional[bool] = True
+
 # ----- JSON Schema -----
 ITEM_SCHEMA = {
     "type": "object",
@@ -795,6 +803,7 @@ SYLLABUS_SNAPSHOT_SOURCE_TYPES = (
     "page",
     "file",
     "modules",
+    "manual_text",
 )
 
 
@@ -841,6 +850,178 @@ def notion_sync_for_unchanged_syllabus(assignment_result: dict, course_name: str
     return {
         "attempted": False,
         "reason": "syllabus unchanged; assignment feed handled separately",
+    }
+
+
+def _item_response_payload_from_db(item: Item) -> dict:
+    return {
+        "title": item.title,
+        "item_type": item.item_type,
+        "subtype": item.subtype,
+        "start_date": item.start_date,
+        "due_date": item.due_date,
+        "description": item.description,
+        "location": item.location,
+        "external_id": item.external_id,
+        "confidence": item.confidence,
+        "item_hash": item.item_hash,
+    }
+
+
+def _item_response_payload_from_parsed(parsed_item: dict, item_hash_value: str) -> dict:
+    return {
+        "title": parsed_item.get("title"),
+        "item_type": parsed_item.get("item_type"),
+        "subtype": parsed_item.get("subtype"),
+        "start_date": parsed_item.get("start_date"),
+        "due_date": parsed_item.get("due_date"),
+        "description": parsed_item.get("description"),
+        "location": parsed_item.get("location"),
+        "external_id": parsed_item.get("external_id"),
+        "confidence": parsed_item.get("confidence"),
+        "item_hash": item_hash_value,
+    }
+
+
+def ingest_syllabus_text(
+    db: Session,
+    course: Course,
+    *,
+    course_id: str,
+    course_name: str,
+    final_text: str,
+    source_type: str,
+    source_name: str,
+    source_identifier: str,
+    assignment_result: Optional[dict] = None,
+    sync_to_notion: bool = True,
+    parse_source: str = "canvas",
+) -> dict:
+    if assignment_result is None:
+        assignment_result = {
+            "changed": False,
+            "items": [],
+            "snapshot_id": None,
+        }
+
+    normalized = normalize_text(final_text)
+    content_hash = hash_text(normalized)
+
+    latest_snapshot = get_latest_syllabus_snapshot(db, course.id)
+
+    if latest_snapshot and latest_snapshot.content_hash == content_hash:
+        cached_items = (
+            db.query(Item)
+            .filter(Item.snapshot_id == latest_snapshot.id)
+            .all()
+        )
+
+        response_items = [_item_response_payload_from_db(item) for item in cached_items]
+        all_response_items = response_items + assignment_result.get("items", [])
+
+        if sync_to_notion:
+            notion_sync = notion_sync_for_unchanged_syllabus(assignment_result, course_name)
+        else:
+            notion_sync = {
+                "attempted": False,
+                "reason": "sync_to_notion disabled",
+            }
+
+        return {
+            "course_id": course_id,
+            "changed": assignment_result.get("changed", False),
+            "snapshot_id": latest_snapshot.id,
+            "assignment_snapshot_id": assignment_result.get("snapshot_id"),
+            "items": all_response_items,
+            "sources": {
+                "syllabus_changed": False,
+                "assignment_feed_changed": assignment_result.get("changed", False),
+            },
+            "notion_sync": notion_sync,
+            "notion_config": check_notion_config(),
+        }
+
+    req = ParseRequest(
+        course_id=course_id,
+        source=parse_source,
+        text=normalized,
+    )
+
+    result = parse(req)
+    parsed_items = result.get("items", [])
+    parsed_items = [item for item in parsed_items if should_keep_item(item)]
+
+    new_snapshot = SourceSnapshot(
+        course_id=course.id,
+        source_type=source_type,
+        source_name=source_name,
+        source_identifier=source_identifier,
+        content_hash=content_hash,
+        normalized_text=normalized,
+    )
+
+    db.add(new_snapshot)
+    db.commit()
+    db.refresh(new_snapshot)
+
+    response_items = []
+
+    for parsed_item in parsed_items:
+        item_hash_value = hash_item(
+            item_type=parsed_item.get("item_type"),
+            title=parsed_item.get("title"),
+            subtype=parsed_item.get("subtype"),
+            start_date=parsed_item.get("start_date"),
+            due_date=parsed_item.get("due_date"),
+            external_id=parsed_item.get("external_id"),
+        )
+
+        item = Item(
+            course_id=course.id,
+            snapshot_id=new_snapshot.id,
+            item_type=parsed_item.get("item_type"),
+            subtype=parsed_item.get("subtype"),
+            title=parsed_item.get("title"),
+            description=parsed_item.get("description"),
+            location=parsed_item.get("location"),
+            start_date=parsed_item.get("start_date"),
+            due_date=parsed_item.get("due_date"),
+            external_id=parsed_item.get("external_id"),
+            item_hash=item_hash_value,
+            confidence=parsed_item.get("confidence"),
+            status="active",
+        )
+
+        db.add(item)
+        response_items.append(
+            _item_response_payload_from_parsed(parsed_item, item_hash_value)
+        )
+
+    db.commit()
+
+    all_response_items = response_items + assignment_result.get("items", [])
+
+    if sync_to_notion:
+        notion_sync = sync_items_to_notion(all_response_items, course_name)
+    else:
+        notion_sync = {
+            "attempted": False,
+            "reason": "sync_to_notion disabled",
+        }
+
+    return {
+        "course_id": course_id,
+        "changed": True,
+        "snapshot_id": new_snapshot.id,
+        "assignment_snapshot_id": assignment_result.get("snapshot_id"),
+        "items": all_response_items,
+        "metadata": result.get("metadata"),
+        "sources": {
+            "syllabus_changed": True,
+            "assignment_feed_changed": assignment_result.get("changed", False),
+        },
+        "notion_sync": notion_sync,
+        "notion_config": check_notion_config(),
     }
 
 
@@ -1206,136 +1387,50 @@ def ingest_canvas_course(
     if final_text is None:
         final_text = strip_html(syllabus_html)
 
-    # Normalize and hash
-    normalized = normalize_text(final_text)
-    content_hash = hash_text(normalized)
-
-    latest_snapshot = get_latest_syllabus_snapshot(db, course.id)
-
-    if latest_snapshot and latest_snapshot.content_hash == content_hash:
-        cached_items = (
-            db.query(Item)
-            .filter(Item.snapshot_id == latest_snapshot.id)
-            .all()
-        )
-
-        response_items = []
-        for item in cached_items:
-            item_payload = {
-                "title": item.title,
-                "item_type": item.item_type,
-                "subtype": item.subtype,
-                "start_date": item.start_date,
-                "due_date": item.due_date,
-                "description": item.description,
-                "location": item.location,
-                "external_id": item.external_id,
-                "confidence": item.confidence,
-                "item_hash": item.item_hash
-            }
-            response_items.append(item_payload)
-
-        all_response_items = response_items + assignment_result.get("items", [])
-
-        return {
-            "course_id": course_id,
-            "changed": assignment_result.get("changed", False),
-            "snapshot_id": latest_snapshot.id,
-            "assignment_snapshot_id": assignment_result.get("snapshot_id"),
-            "items": all_response_items,
-            "sources": {
-                "syllabus_changed": False,
-                "assignment_feed_changed": assignment_result.get("changed", False)
-            },
-            "notion_sync": notion_sync_for_unchanged_syllabus(assignment_result, course_name),
-            "notion_config": check_notion_config()
-        }
-
-    req = ParseRequest(
+    return ingest_syllabus_text(
+        db=db,
+        course=course,
         course_id=course_id,
-        source="canvas",
-        text=normalized
-    )
-
-    result = parse(req)
-    parsed_items = result.get("items", [])
-    parsed_items = [item for item in parsed_items if should_keep_item(item)]
-
-    new_snapshot = SourceSnapshot(
-        course_id=course.id,
+        course_name=course_name,
+        final_text=final_text,
         source_type=syllabus_source_type or "syllabus_body",
         source_name=syllabus_source_name or "syllabus",
         source_identifier=syllabus_source_identifier or course_id,
-        content_hash=content_hash,
-        normalized_text=normalized
+        assignment_result=assignment_result,
+        sync_to_notion=True,
+        parse_source="canvas",
     )
 
-    db.add(new_snapshot)
-    db.commit()
-    db.refresh(new_snapshot)
 
-    response_items = []
+@app.post("/manual/syllabus")
+def ingest_manual_syllabus(
+    req: ManualSyllabusRequest,
+    db: Session = Depends(get_db),
+):
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="No syllabus text provided")
 
-    for parsed_item in parsed_items:
-        item_hash_value = hash_item(
-            item_type=parsed_item.get("item_type"),
-            title=parsed_item.get("title"),
-            subtype=parsed_item.get("subtype"),
-            start_date=parsed_item.get("start_date"),
-            due_date=parsed_item.get("due_date"),
-            external_id=parsed_item.get("external_id")
-        )
+    course_name = req.course_name or req.course_key
+    course = get_or_create_course(db, req.course_key, course_name)
 
-        item = Item(
-            course_id=course.id,
-            snapshot_id=new_snapshot.id,
-            item_type=parsed_item.get("item_type"),
-            subtype=parsed_item.get("subtype"),
-            title=parsed_item.get("title"),
-            description=parsed_item.get("description"),
-            location=parsed_item.get("location"),
-            start_date=parsed_item.get("start_date"),
-            due_date=parsed_item.get("due_date"),
-            external_id=parsed_item.get("external_id"),
-            item_hash=item_hash_value,
-            confidence=parsed_item.get("confidence"),
-            status="active"
-        )
+    if req.term:
+        course.term = req.term
+        db.commit()
+        db.refresh(course)
 
-        db.add(item)
+    sync_to_notion = True if req.sync_to_notion is None else req.sync_to_notion
 
-        item_payload = {
-            "title": parsed_item.get("title"),
-            "item_type": parsed_item.get("item_type"),
-            "subtype": parsed_item.get("subtype"),
-            "start_date": parsed_item.get("start_date"),
-            "due_date": parsed_item.get("due_date"),
-            "description": parsed_item.get("description"),
-            "location": parsed_item.get("location"),
-            "external_id": parsed_item.get("external_id"),
-            "confidence": parsed_item.get("confidence"),
-            "item_hash": item_hash_value
-        }
-        response_items.append(item_payload)
-
-    db.commit()
-
-    all_response_items = response_items + assignment_result.get("items", [])
-
-    notion_results = sync_items_to_notion(all_response_items, course_name)
-
-    return {
-        "course_id": course_id,
-        "changed": True,
-        "snapshot_id": new_snapshot.id,
-        "assignment_snapshot_id": assignment_result.get("snapshot_id"),
-        "items": all_response_items,
-        "metadata": result.get("metadata"),
-        "sources": {
-            "syllabus_changed": True,
-            "assignment_feed_changed": assignment_result.get("changed", False)
-        },
-        "notion_sync": notion_results,
-        "notion_config": check_notion_config()
-    }
+    return ingest_syllabus_text(
+        db=db,
+        course=course,
+        course_id=req.course_key,
+        course_name=course_name,
+        final_text=text,
+        source_type="manual_text",
+        source_name="manual_paste",
+        source_identifier=req.course_key,
+        sync_to_notion=sync_to_notion,
+        parse_source="manual",
+    )
 
