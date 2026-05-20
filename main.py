@@ -190,6 +190,49 @@ def fetch_course_pages(course_id: str):
 
     return response.json()
 
+def get_next_link(response) -> Optional[str]:
+    link_header = response.headers.get("Link")
+    if not link_header:
+        return None
+
+    for part in link_header.split(","):
+        section = part.strip()
+        if 'rel="next"' not in section:
+            continue
+        start = section.find("<")
+        end = section.find(">")
+        if start != -1 and end != -1 and end > start:
+            return section[start + 1:end]
+
+    return None
+
+
+def fetch_paginated_canvas_list(url: str, headers: dict) -> list:
+    results = []
+
+    while url:
+        response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Canvas Assignments API error: {response.text}"
+            )
+
+        data = response.json()
+
+        if not isinstance(data, list):
+            raise HTTPException(
+                status_code=500,
+                detail="Canvas Assignments API returned unexpected data format"
+            )
+
+        results.extend(data)
+        url = get_next_link(response)
+
+    return results
+
+
 def fetch_canvas_assignments(course_id: str) -> list:
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/assignments"
 
@@ -197,23 +240,7 @@ def fetch_canvas_assignments(course_id: str) -> list:
         "Authorization": f"Bearer {canvas_token}"
     }
 
-    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Canvas Assignments API error: {response.text}"
-        )
-
-    data = response.json()
-
-    if not isinstance(data, list):
-        raise HTTPException(
-            status_code=500,
-            detail="Canvas Assignments API returned unexpected data format"
-        )
-
-    return data
+    return fetch_paginated_canvas_list(url, headers)
 
 def fetch_page_body(course_id: str, page_url: str) -> str:
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/pages/{page_url}"
