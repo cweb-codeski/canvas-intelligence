@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from db import Base, engine, get_db
 from models import AssignmentDetail, Course, Item, SourceSnapshot
 from notion import check_notion_config, create_notion_item
-from utils import hash_item, hash_text, normalize_text
+from utils import hash_item, hash_text, normalize_text, sanitize_extracted_item_dates
 
 Base.metadata.create_all(bind=engine)
 
@@ -45,6 +45,7 @@ class ParseRequest(BaseModel):
     course_id: str
     source: str
     text: Optional[str] = None
+    term: Optional[str] = None
 
 
 class ManualSyllabusRequest(BaseModel):
@@ -972,6 +973,7 @@ def ingest_syllabus_text(
         course_id=course_id,
         source=parse_source,
         text=normalized,
+        term=course.term,
     )
 
     result = parse(req)
@@ -1175,8 +1177,13 @@ def parse(req: ParseRequest):
     if not req.text:
         raise HTTPException(status_code=400, detail="No syllabus text provided")
 
+    term_context = ""
+    if req.term:
+        term_context = f"\nCourse term context: {req.term}\n"
+
     prompt = f"""
 Extract structured academic items from the following Canvas course text.
+{term_context}
 
 Return ONLY valid JSON with a top-level key "items".
 
@@ -1241,6 +1248,14 @@ with subtype "quiz".
 item_type "assignment" with subtype "quiz".
 
 Date rules:
+- Use YYYY-MM-DD only when the year is explicit in the source text OR can be safely \
+inferred from the provided course term context.
+- If the source gives only a month and day such as "September 12" and a course term year \
+is provided, use that term year.
+- If the source gives only a month and day and no course term year is provided, leave \
+start_date and due_date null. Do NOT guess a year such as 2023.
+- Do NOT convert relative phrases such as "Friday", "next Friday", or "next week" into \
+absolute dates unless the source also gives an explicit calendar date.
 - For exams and lectures, prefer start_date.
 - For assignments, prefer due_date.
 - For readings, use due_date only if explicitly stated; otherwise leave dates null.
@@ -1283,7 +1298,10 @@ Text:
     if "items" not in parsed or not isinstance(parsed["items"], list):
         raise HTTPException(status_code=422, detail="LLM output missing 'items' array")
 
-    items = parsed["items"]
+    items = [
+        sanitize_extracted_item_dates(item, req.text, req.term)
+        for item in parsed["items"]
+    ]
 
     avg_conf = (
         sum(i.get("confidence", 0) for i in items) / len(items)
