@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
-from sqlalchemy.orm import relationship
 from datetime import datetime
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
+
 from db import Base
 
 
@@ -21,9 +22,12 @@ class SourceSnapshot(Base):
     id = Column(Integer, primary_key=True)
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
 
-    source_type = Column(String, nullable=False)   # syllabus_body, page, file, assignment_feed, modules
-    source_name = Column(String, nullable=True)    # page title, filename, etc.
-    source_identifier = Column(String, nullable=True)  # Canvas page URL slug, file_id, assignment_id
+    # syllabus_body, page, file, assignment_feed, modules
+    source_type = Column(String, nullable=False)
+    # page title, filename, etc.
+    source_name = Column(String, nullable=True)
+    # Canvas page URL slug, file_id, assignment_id
+    source_identifier = Column(String, nullable=True)
     content_hash = Column(String, nullable=False, index=True)
     normalized_text = Column(Text, nullable=True)
 

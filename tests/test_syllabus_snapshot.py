@@ -10,8 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from db import Base
-from models import Course, SourceSnapshot
 from main import SYLLABUS_SNAPSHOT_SOURCE_TYPES, get_latest_syllabus_snapshot
+from models import Course, SourceSnapshot
 
 
 def _make_session():

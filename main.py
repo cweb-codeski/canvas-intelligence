@@ -1,23 +1,22 @@
-import requests
-import os
-import json
-import re
 import io
-from typing import Optional, List, Tuple
+import json
+import os
+import re
+from typing import List, Optional, Tuple
 
-from fastapi import FastAPI, HTTPException, Depends
-from pydantic import BaseModel
-from openai import OpenAI
-from jsonschema import validate, ValidationError
+import requests
 from docx import Document
+from fastapi import Depends, FastAPI, HTTPException
+from jsonschema import ValidationError, validate
+from openai import OpenAI
+from pydantic import BaseModel
 from pypdf import PdfReader
-
-from db import Base, engine, get_db
-from models import Course, SourceSnapshot, Item, AssignmentDetail
-from utils import normalize_text, hash_text, hash_item
 from sqlalchemy.orm import Session
 
-from notion import create_notion_item, check_notion_config
+from db import Base, engine, get_db
+from models import AssignmentDetail, Course, Item, SourceSnapshot
+from notion import check_notion_config, create_notion_item
+from utils import hash_item, hash_text, normalize_text
 
 Base.metadata.create_all(bind=engine)
 
@@ -366,14 +365,20 @@ def fetch_file_metadata(file_id: str) -> dict:
     headers = {"Authorization": f"Bearer {canvas_token}"}
     resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=f"Canvas File API error: {resp.text}")
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Canvas File API error: {resp.text}",
+        )
     return resp.json()
 
 def download_file(file_url: str) -> bytes:
     headers = {"Authorization": f"Bearer {canvas_token}"}
     resp = requests.get(file_url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=f"Canvas File download error: {resp.text}")
+        raise HTTPException(
+            status_code=resp.status_code,
+            detail=f"Canvas File download error: {resp.text}",
+        )
     return resp.content
 
 def fetch_paginated_course_modules(url: str, headers: dict) -> list:
@@ -989,9 +994,11 @@ For each item include:
 
 Definitions:
 - exam: a discrete assessment event such as a midterm, final, quiz, practical, or timed test
-- assignment: a concrete deliverable or submission such as homework, lab report, discussion, project, paper, or worksheet
+- assignment: a concrete deliverable or submission such as homework, lab report, \
+discussion, project, paper, or worksheet
 - reading: a specific reading task tied to a lecture, week, module, or date
-- lecture: a class meeting, lecture session, lab meeting, field trip, review session, discussion section, or guest lecture
+- lecture: a class meeting, lecture session, lab meeting, field trip, review session, \
+discussion section, or guest lecture
 
 Important extraction rules:
 - Prefer concrete, singular, actionable items.
@@ -1001,23 +1008,29 @@ Important extraction rules:
 - Do NOT extract generic course-description prose.
 
 Lecture rules:
-- If the syllabus provides dated or clearly scheduled lectures, labs, field trips, or sessions, extract each as its own lecture row.
-- Use subtype values like lecture, lab, field_trip, review_session, discussion_section, or guest_lecture when appropriate.
+- If the syllabus provides dated or clearly scheduled lectures, labs, field trips, or \
+sessions, extract each as its own lecture row.
+- Use subtype values like lecture, lab, field_trip, review_session, discussion_section, \
+or guest_lecture when appropriate.
 - A field trip should be item_type "lecture" with subtype "field_trip".
 
 Reading rules:
 - Extract readings only when they are specific and meaningful.
-- If a reading is clearly tied to a lecture, week, module, or class meeting, include that linkage in the description.
+- If a reading is clearly tied to a lecture, week, module, or class meeting, include that \
+linkage in the description.
 - Do NOT invent a due_date for a reading if none is explicitly given.
 
 Assignment rules:
 - Extract only concrete assignments, not buckets or categories.
 - Good examples: "Lab Report 2", "Homework 3", "Discussion Post 4".
-- Bad examples: "Lab Write-Ups", "Weekly reflections", "There will be five quizzes" unless the text gives a specific concrete instance.
+- Bad examples: "Lab Write-Ups", "Weekly reflections", "There will be five quizzes" unless \
+the text gives a specific concrete instance.
 
 Quiz rules:
-- If a quiz is presented as a scheduled/timed assessment, classify it as item_type "exam" with subtype "quiz".
-- If a quiz is presented as a normal due-date task or submission, classify it as item_type "assignment" with subtype "quiz".
+- If a quiz is presented as a scheduled/timed assessment, classify it as item_type "exam" \
+with subtype "quiz".
+- If a quiz is presented as a normal due-date task or submission, classify it as \
+item_type "assignment" with subtype "quiz".
 
 Date rules:
 - For exams and lectures, prefer start_date.
@@ -1026,12 +1039,18 @@ Date rules:
 - If there are no valid items, return {{"items": []}}.
 
 - Do NOT extract recurring or plural assignment categories as one item.
-- Do NOT extract items like "weekly quizzes", "peer-review sessions", or "lab write-ups" unless the text gives a single concrete instance or clearly defines one formal named semester-long assignment.
-- If the text describes multiple future assignments without enumerating them, do not collapse them into one row.
-- A semester-long named project may be extracted as one assignment if it is clearly a single deliverable.
-- If an item is a practical, lab practical, or practical assessment, classify it as item_type "exam", not "lecture".
+- Do NOT extract items like "weekly quizzes", "peer-review sessions", or "lab write-ups" \
+unless the text gives a single concrete instance or clearly defines one formal named \
+semester-long assignment.
+- If the text describes multiple future assignments without enumerating them, do not \
+collapse them into one row.
+- A semester-long named project may be extracted as one assignment if it is clearly a \
+single deliverable.
+- If an item is a practical, lab practical, or practical assessment, classify it as \
+item_type "exam", not "lecture".
 - Use subtype values like practical or lab_practical for those items.
-- Do not classfiy practical exams or assessments as lecture items, even if they occur during a lab meeting
+- Do not classfiy practical exams or assessments as lecture items, even if they occur \
+during a lab meeting
 Text:
 {req.text}
 """

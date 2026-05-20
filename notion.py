@@ -1,4 +1,5 @@
 import os
+
 import requests
 
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY")

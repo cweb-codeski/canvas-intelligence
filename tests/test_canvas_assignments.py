@@ -5,15 +5,13 @@ os.environ.setdefault("CANVAS_BASE_URL", "https://example.instructure.com")
 os.environ.setdefault("CANVAS_ACCESS_TOKEN", "test-canvas-token")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
 
-from utils import hash_item
-
 from main import (
     build_assignment_feed_text,
     clean_canvas_datetime_to_date,
     infer_assignment_subtype,
     normalize_canvas_assignment,
 )
-
+from utils import hash_item
 
 # --- clean_canvas_datetime_to_date ---
 
