@@ -1,4 +1,5 @@
 import os
+import tempfile
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +13,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
+
+_pytest_import_db = Path(tempfile.gettempdir()) / "canvas-parser-pytest.db"
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{_pytest_import_db.as_posix()}")
 
 from db import Base, get_db  # noqa: E402
 

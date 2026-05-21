@@ -461,12 +461,12 @@ python -m ruff format --check .
 - Canvas tests use fake `CANVAS_BASE_URL` / `CANVAS_ACCESS_TOKEN`.
 - Most tests mock `main.parse` or Canvas HTTP — no live OpenAI or Canvas required for CI-style runs.
 - Direct unit tests often use in-memory SQLite with an explicit `db` session.
-- HTTP route writes in TestClient tests use an isolated per-test temp SQLite database via a FastAPI `get_db` dependency override in `tests/conftest.py`.
-- Importing the app may still create or update the `./app.db` schema because `main.py` calls `Base.metadata.create_all(bind=engine)` at import time.
-- A future `DATABASE_URL` test override can eliminate that import-time touch.
+- Test imports set `DATABASE_URL` in `tests/conftest.py` (system temp SQLite file) before `db`/`main` load so import-time `Base.metadata.create_all` does not touch `./app.db`.
+- HTTP route writes in TestClient tests still use a function-scoped per-test temp SQLite database via a FastAPI `get_db` dependency override in `tests/conftest.py` (separate from the import-time DB).
 
 | Test file | Covers |
 |-----------|--------|
+| `test_database_url.py` | `DATABASE_URL` honored at import; pytest avoids default `./app.db` |
 | `test_db_isolation.py` | TestClient uses isolated DB via `get_db` override |
 | `test_manual_syllabus.py` | Paste, snapshots, empty text 400 |
 | `test_manual_syllabus_file.py` | txt/pdf/docx upload, unsupported types |
