@@ -460,10 +460,14 @@ python -m ruff format --check .
 - Tests set `OPENAI_API_KEY=test-openai-key` and usually `ENABLE_NOTION_SYNC=false`.
 - Canvas tests use fake `CANVAS_BASE_URL` / `CANVAS_ACCESS_TOKEN`.
 - Most tests mock `main.parse` or Canvas HTTP — no live OpenAI or Canvas required for CI-style runs.
-- Some tests use in-memory SQLite; TestClient tests may write to `./app.db` — delete `app.db` if runs are flaky.
+- Direct unit tests often use in-memory SQLite with an explicit `db` session.
+- HTTP route writes in TestClient tests use an isolated per-test temp SQLite database via a FastAPI `get_db` dependency override in `tests/conftest.py`.
+- Importing the app may still create or update the `./app.db` schema because `main.py` calls `Base.metadata.create_all(bind=engine)` at import time.
+- A future `DATABASE_URL` test override can eliminate that import-time touch.
 
 | Test file | Covers |
 |-----------|--------|
+| `test_db_isolation.py` | TestClient uses isolated DB via `get_db` override |
 | `test_manual_syllabus.py` | Paste, snapshots, empty text 400 |
 | `test_manual_syllabus_file.py` | txt/pdf/docx upload, unsupported types |
 | `test_canvas_config.py` | Start without Canvas; 503 on ingest |

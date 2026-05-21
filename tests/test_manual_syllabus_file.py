@@ -8,11 +8,7 @@ from docx import Document
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
 
-from fastapi.testclient import TestClient
-
-from main import SYLLABUS_SNAPSHOT_SOURCE_TYPES, app, extract_text_from_manual_upload
-
-client = TestClient(app)
+from main import SYLLABUS_SNAPSHOT_SOURCE_TYPES, extract_text_from_manual_upload
 
 
 def _unique_course_key(prefix: str) -> str:
@@ -40,7 +36,7 @@ PARSE_RESULT = {
 }
 
 
-def _upload_txt(content: bytes, *, course_key="manual-file-101", filename="syllabus.txt"):
+def _upload_txt(client, content: bytes, *, course_key="manual-file-101", filename="syllabus.txt"):
     return client.post(
         "/manual/syllabus/file",
         data={
@@ -65,9 +61,9 @@ def test_manual_file_in_syllabus_snapshot_source_types():
 
 
 @patch("main.parse", return_value=PARSE_RESULT)
-def test_txt_upload_first_ingest_creates_snapshot_and_items(mock_parse):
+def test_txt_upload_first_ingest_creates_snapshot_and_items(mock_parse, client):
     course_key = _unique_course_key("manual-file-first")
-    response = _upload_txt(_syllabus_bytes(course_key), course_key=course_key)
+    response = _upload_txt(client, _syllabus_bytes(course_key), course_key=course_key)
 
     assert response.status_code == 200
     body = response.json()
@@ -77,11 +73,11 @@ def test_txt_upload_first_ingest_creates_snapshot_and_items(mock_parse):
 
 
 @patch("main.parse", return_value=PARSE_RESULT)
-def test_repeated_identical_txt_upload_returns_unchanged(mock_parse):
+def test_repeated_identical_txt_upload_returns_unchanged(mock_parse, client):
     course_key = _unique_course_key("manual-file-repeat")
     content = _syllabus_bytes(course_key)
-    first = _upload_txt(content, course_key=course_key)
-    second = _upload_txt(content, course_key=course_key)
+    first = _upload_txt(client, content, course_key=course_key)
+    second = _upload_txt(client, content, course_key=course_key)
 
     assert first.status_code == 200
     assert first.json()["changed"] is True
@@ -92,15 +88,15 @@ def test_repeated_identical_txt_upload_returns_unchanged(mock_parse):
     mock_parse.assert_called_once()
 
 
-def test_unsupported_file_type_returns_400():
-    response = _upload_txt(b"data", filename="notes.csv")
+def test_unsupported_file_type_returns_400(client):
+    response = _upload_txt(client, b"data", filename="notes.csv")
 
     assert response.status_code == 400
     assert "Unsupported file type" in response.json()["detail"]
 
 
-def test_whitespace_only_txt_returns_400():
-    response = _upload_txt(b"   \n\t  ")
+def test_whitespace_only_txt_returns_400(client):
+    response = _upload_txt(client, b"   \n\t  ")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "No syllabus text provided"
@@ -114,7 +110,7 @@ def test_extract_text_from_docx_bytes_via_upload_helper():
 
 
 @patch("main.extract_text_from_pdf_bytes", return_value="PDF syllabus text")
-def test_pdf_upload_uses_pdf_extractor(mock_pdf_extract):
+def test_pdf_upload_uses_pdf_extractor(mock_pdf_extract, client):
     course_key = _unique_course_key("manual-file-pdf")
     with patch("main.parse", return_value=PARSE_RESULT):
         response = client.post(

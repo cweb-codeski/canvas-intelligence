@@ -4,15 +4,12 @@ from unittest.mock import patch
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
 
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from db import Base
-from main import app, ingest_syllabus_text
+from main import ingest_syllabus_text
 from models import Course, Item, SourceSnapshot
-
-client = TestClient(app)
 
 
 def _make_session():
@@ -116,7 +113,7 @@ def test_changed_manual_text_creates_new_snapshot(mock_parse):
     assert mock_parse.call_count == 2
 
 
-def test_manual_syllabus_whitespace_only_returns_400():
+def test_manual_syllabus_whitespace_only_returns_400(client):
     response = client.post(
         "/manual/syllabus",
         json={

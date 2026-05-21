@@ -3,6 +3,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from conftest import isolated_app_db
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
@@ -42,11 +43,11 @@ def test_main_imports_without_canvas_env(monkeypatch):
     assert main.app is not None
 
 
-def test_canvas_ingest_returns_503_without_config(monkeypatch):
+def test_canvas_ingest_returns_503_without_config(monkeypatch, tmp_path):
     main = _reload_main_without_canvas(monkeypatch)
-    client = TestClient(main.app)
-
-    response = client.post("/canvas/ingest/123")
+    with isolated_app_db(main.app, tmp_path):
+        client = TestClient(main.app)
+        response = client.post("/canvas/ingest/123")
 
     assert response.status_code == 503
     assert response.json()["detail"] == CANVAS_CONFIG_DETAIL
@@ -62,21 +63,22 @@ def test_fetch_course_pages_raises_503_without_config(monkeypatch):
     assert exc_info.value.detail == CANVAS_CONFIG_DETAIL
 
 
-def test_manual_syllabus_works_without_canvas_env(monkeypatch):
+def test_manual_syllabus_works_without_canvas_env(monkeypatch, tmp_path):
     main = _reload_main_without_canvas(monkeypatch)
-    client = TestClient(main.app)
     course_key = f"manual-no-canvas-{uuid.uuid4().hex}"
 
-    with patch.object(main, "parse", return_value=PARSE_RESULT):
-        response = client.post(
-            "/manual/syllabus",
-            json={
-                "course_key": course_key,
-                "course_name": "Manual Course",
-                "text": "Homework 1 due Friday\n",
-                "sync_to_notion": False,
-            },
-        )
+    with isolated_app_db(main.app, tmp_path):
+        with patch.object(main, "parse", return_value=PARSE_RESULT):
+            client = TestClient(main.app)
+            response = client.post(
+                "/manual/syllabus",
+                json={
+                    "course_key": course_key,
+                    "course_name": "Manual Course",
+                    "text": "Homework 1 due Friday\n",
+                    "sync_to_notion": False,
+                },
+            )
 
     assert response.status_code == 200
     body = response.json()
