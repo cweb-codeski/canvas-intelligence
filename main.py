@@ -22,23 +22,40 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
+
 @app.get("/notion/status")
 def notion_status():
     return check_notion_config()
+
 
 # ----- Environment Validation -----
 api_key = os.environ.get("OPENAI_API_KEY")
 if not api_key:
     raise RuntimeError("OPENAI_API_KEY environment variable not set")
-canvas_base_url = os.environ.get("CANVAS_BASE_URL")
-canvas_token = os.environ.get("CANVAS_ACCESS_TOKEN")
-
-if not canvas_base_url or not canvas_token:
-    raise RuntimeError("Canvas environment variables not set")
 
 REQUEST_TIMEOUT_SECONDS = 10
 
 client = OpenAI(api_key=api_key)
+
+
+def get_canvas_config() -> tuple[str, str]:
+    base_url = (os.environ.get("CANVAS_BASE_URL") or "").strip()
+    token = (os.environ.get("CANVAS_ACCESS_TOKEN") or "").strip()
+    if not base_url or not token:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Canvas is not configured. Set CANVAS_BASE_URL and "
+                "CANVAS_ACCESS_TOKEN to use Canvas endpoints."
+            ),
+        )
+    return base_url, token
+
+
+def _canvas_headers() -> dict:
+    _, token = get_canvas_config()
+    return {"Authorization": f"Bearer {token}"}
+
 
 # ----- Request Model -----
 class ParseRequest(BaseModel):
@@ -55,6 +72,7 @@ class ManualSyllabusRequest(BaseModel):
     text: str
     sync_to_notion: Optional[bool] = True
 
+
 # ----- JSON Schema -----
 ITEM_SCHEMA = {
     "type": "object",
@@ -68,31 +86,19 @@ ITEM_SCHEMA = {
                 "properties": {
                     "item_type": {
                         "type": "string",
-                        "enum": ["exam", "assignment", "reading", "lecture"]
+                        "enum": ["exam", "assignment", "reading", "lecture"],
                     },
                     "subtype": {"type": ["string", "null"]},
                     "title": {"type": ["string", "null"]},
                     "description": {"type": ["string", "null"]},
                     "location": {"type": ["string", "null"]},
-                    "start_date": {
-                        "type": ["string", "null"],
-                        "pattern": r"^\d{4}-\d{2}-\d{2}$"
-                    },
-                    "due_date": {
-                        "type": ["string", "null"],
-                        "pattern": r"^\d{4}-\d{2}-\d{2}$"
-                    },
+                    "start_date": {"type": ["string", "null"], "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                    "due_date": {"type": ["string", "null"], "pattern": r"^\d{4}-\d{2}-\d{2}$"},
                     "external_id": {"type": ["string", "null"]},
-                    "confidence": {
-                        "type": "number",
-                        "minimum": 0.0,
-                        "maximum": 1.0
-                    },
-                    "details": {
-                        "type": ["object", "null"]
-                    }
-                }
-            }
+                    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "details": {"type": ["object", "null"]},
+                },
+            },
         },
         "metadata": {
             "type": "object",
@@ -100,22 +106,15 @@ ITEM_SCHEMA = {
             "properties": {
                 "course_id": {"type": "string"},
                 "source": {"type": "string"},
-                "extraction_confidence": {
-                    "type": "number",
-                    "minimum": 0.0,
-                    "maximum": 1.0
-                }
-            }
-        }
-    }
+                "extraction_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            },
+        },
+    },
 }
 
+
 def get_or_create_course(db: Session, canvas_course_id: str, course_name: str) -> Course:
-    course = (
-        db.query(Course)
-        .filter(Course.canvas_course_id == canvas_course_id)
-        .first()
-    )
+    course = db.query(Course).filter(Course.canvas_course_id == canvas_course_id).first()
 
     if course:
         if not course.course_name and course_name:
@@ -124,22 +123,17 @@ def get_or_create_course(db: Session, canvas_course_id: str, course_name: str) -
             db.refresh(course)
         return course
 
-    course = Course(
-        canvas_course_id=canvas_course_id,
-        course_name=course_name
-    )
+    course = Course(canvas_course_id=canvas_course_id, course_name=course_name)
     db.add(course)
     db.commit()
     db.refresh(course)
     return course
 
+
 def fetch_course_name(course_id: str):
-
+    canvas_base_url, _ = get_canvas_config()
     url = f"{canvas_base_url}/api/v1/courses/{course_id}"
-
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+    headers = _canvas_headers()
 
     response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
@@ -150,19 +144,17 @@ def fetch_course_name(course_id: str):
 
     return data.get("course_code") or data.get("name") or course_id
 
-def fetch_syllabus(course_id: str) -> str:
-    url = f"{canvas_base_url}/api/v1/courses/{course_id}?include[]=syllabus_body"
 
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+def fetch_syllabus(course_id: str) -> str:
+    canvas_base_url, _ = get_canvas_config()
+    url = f"{canvas_base_url}/api/v1/courses/{course_id}?include[]=syllabus_body"
+    headers = _canvas_headers()
 
     response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Canvas API error: {response.text}"
+            status_code=response.status_code, detail=f"Canvas API error: {response.text}"
         )
 
     data = response.json()
@@ -170,12 +162,10 @@ def fetch_syllabus(course_id: str) -> str:
     syllabus = data.get("syllabus_body")
 
     if not syllabus:
-        raise HTTPException(
-            status_code=404,
-            detail="No syllabus found for this course"
-        )
+        raise HTTPException(status_code=404, detail="No syllabus found for this course")
 
     return syllabus
+
 
 def fetch_paginated_course_pages(url: str, headers: dict, course_id: str) -> list:
     results = []
@@ -189,16 +179,14 @@ def fetch_paginated_course_pages(url: str, headers: dict, course_id: str) -> lis
                 print(f"[INFO] Pages disabled for course {course_id}. Skipping page lookup.")
                 return []
             raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Canvas Pages API error: {response.text}"
+                status_code=response.status_code, detail=f"Canvas Pages API error: {response.text}"
             )
 
         data = response.json()
 
         if not isinstance(data, list):
             raise HTTPException(
-                status_code=500,
-                detail="Canvas Pages API returned unexpected data format"
+                status_code=500, detail="Canvas Pages API returned unexpected data format"
             )
 
         results.extend(data)
@@ -208,13 +196,12 @@ def fetch_paginated_course_pages(url: str, headers: dict, course_id: str) -> lis
 
 
 def fetch_course_pages(course_id: str):
+    canvas_base_url, _ = get_canvas_config()
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/pages"
-
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+    headers = _canvas_headers()
 
     return fetch_paginated_course_pages(url, headers, course_id)
+
 
 def get_next_link(response) -> Optional[str]:
     link_header = response.headers.get("Link")
@@ -228,7 +215,7 @@ def get_next_link(response) -> Optional[str]:
         start = section.find("<")
         end = section.find(">")
         if start != -1 and end != -1 and end > start:
-            return section[start + 1:end]
+            return section[start + 1 : end]
 
     return None
 
@@ -242,15 +229,14 @@ def fetch_paginated_canvas_list(url: str, headers: dict) -> list:
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"Canvas Assignments API error: {response.text}"
+                detail=f"Canvas Assignments API error: {response.text}",
             )
 
         data = response.json()
 
         if not isinstance(data, list):
             raise HTTPException(
-                status_code=500,
-                detail="Canvas Assignments API returned unexpected data format"
+                status_code=500, detail="Canvas Assignments API returned unexpected data format"
             )
 
         results.extend(data)
@@ -260,27 +246,23 @@ def fetch_paginated_canvas_list(url: str, headers: dict) -> list:
 
 
 def fetch_canvas_assignments(course_id: str) -> list:
+    canvas_base_url, _ = get_canvas_config()
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/assignments"
-
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+    headers = _canvas_headers()
 
     return fetch_paginated_canvas_list(url, headers)
 
-def fetch_page_body(course_id: str, page_url: str) -> str:
-    url = f"{canvas_base_url}/api/v1/courses/{course_id}/pages/{page_url}"
 
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+def fetch_page_body(course_id: str, page_url: str) -> str:
+    canvas_base_url, _ = get_canvas_config()
+    url = f"{canvas_base_url}/api/v1/courses/{course_id}/pages/{page_url}"
+    headers = _canvas_headers()
 
     response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code != 200:
         raise HTTPException(
-            status_code=response.status_code,
-            detail=f"Canvas Page Fetch Error: {response.text}"
+            status_code=response.status_code, detail=f"Canvas Page Fetch Error: {response.text}"
         )
 
     data = response.json()
@@ -288,12 +270,10 @@ def fetch_page_body(course_id: str, page_url: str) -> str:
     body = data.get("body")
 
     if not body:
-        raise HTTPException(
-            status_code=404,
-            detail="Page body not found"
-        )
+        raise HTTPException(status_code=404, detail="Page body not found")
 
     return body
+
 
 # ----- Added Helpers: HTML stripping + syllabus file parsing -----
 def should_keep_item(parsed_item: dict) -> bool:
@@ -312,13 +292,7 @@ def should_keep_item(parsed_item: dict) -> bool:
 
     text = f"{title} {description}"
 
-    project_indicators = [
-        "project",
-        "paper",
-        "literature review",
-        "final project",
-        "term paper"
-    ]
+    project_indicators = ["project", "paper", "literature review", "final project", "term paper"]
 
     if any(indicator in text for indicator in project_indicators):
         return True
@@ -333,13 +307,14 @@ def should_keep_item(parsed_item: dict) -> bool:
         "will be organized",
         "2-",
         "several",
-        "multiple"
+        "multiple",
     ]
 
     if any(indicator in text for indicator in bucket_indicators):
         return False
 
     return True
+
 
 def strip_html(html: str) -> str:
     if not html:
@@ -350,6 +325,7 @@ def strip_html(html: str) -> str:
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
+
 def extract_file_id_from_html(html: str) -> Optional[str]:
     """
     Tries to find a Canvas file id from common syllabus attachment links.
@@ -358,20 +334,18 @@ def extract_file_id_from_html(html: str) -> Optional[str]:
     if not html:
         return None
 
-    patterns = [
-        r"/courses/\d+/files/(\d+)",
-        r"/files/(\d+)/download",
-        r"/files/(\d+)\?"
-    ]
+    patterns = [r"/courses/\d+/files/(\d+)", r"/files/(\d+)/download", r"/files/(\d+)\?"]
     for p in patterns:
         m = re.search(p, html)
         if m:
             return m.group(1)
     return None
 
+
 def fetch_file_metadata(file_id: str) -> dict:
+    canvas_base_url, _ = get_canvas_config()
     url = f"{canvas_base_url}/api/v1/files/{file_id}"
-    headers = {"Authorization": f"Bearer {canvas_token}"}
+    headers = _canvas_headers()
     resp = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
         raise HTTPException(
@@ -380,8 +354,9 @@ def fetch_file_metadata(file_id: str) -> dict:
         )
     return resp.json()
 
+
 def download_file(file_url: str) -> bytes:
-    headers = {"Authorization": f"Bearer {canvas_token}"}
+    headers = _canvas_headers()
     resp = requests.get(file_url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     if resp.status_code != 200:
         raise HTTPException(
@@ -389,6 +364,7 @@ def download_file(file_url: str) -> bytes:
             detail=f"Canvas File download error: {resp.text}",
         )
     return resp.content
+
 
 def fetch_paginated_course_modules(url: str, headers: dict) -> list:
     results = []
@@ -399,15 +375,14 @@ def fetch_paginated_course_modules(url: str, headers: dict) -> list:
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code,
-                detail=f"Canvas Modules API error: {response.text}"
+                detail=f"Canvas Modules API error: {response.text}",
             )
 
         data = response.json()
 
         if not isinstance(data, list):
             raise HTTPException(
-                status_code=500,
-                detail="Canvas Modules API returned unexpected data format"
+                status_code=500, detail="Canvas Modules API returned unexpected data format"
             )
 
         results.extend(data)
@@ -417,11 +392,9 @@ def fetch_paginated_course_modules(url: str, headers: dict) -> list:
 
 
 def fetch_course_modules(course_id: str) -> list:
+    canvas_base_url, _ = get_canvas_config()
     url = f"{canvas_base_url}/api/v1/courses/{course_id}/modules?include[]=items&per_page=100"
-
-    headers = {
-        "Authorization": f"Bearer {canvas_token}"
-    }
+    headers = _canvas_headers()
 
     return fetch_paginated_course_modules(url, headers)
 
@@ -464,12 +437,14 @@ def find_syllabus_file_in_modules(course_id: str) -> Optional[dict]:
             if not file_id:
                 continue
 
-            file_candidates.append({
-                "file_id": str(file_id),
-                "title": title,
-                "module_name": module_name,
-                "score": score
-            })
+            file_candidates.append(
+                {
+                    "file_id": str(file_id),
+                    "title": title,
+                    "module_name": module_name,
+                    "score": score,
+                }
+            )
 
     if not file_candidates:
         return None
@@ -529,6 +504,7 @@ def fetch_and_extract_canvas_file(file_id: str) -> Tuple[Optional[str], Optional
 
     return None, filename or None
 
+
 def extract_text_from_docx_bytes(data: bytes) -> str:
     doc = Document(io.BytesIO(data))
     parts: List[str] = []
@@ -583,7 +559,7 @@ def complete_missing_exam_dates(course_id: str, exams: list) -> list:
         "calendar",
         "important dates",
         "timeline",
-        "weekly"
+        "weekly",
     ]
 
     candidates = []
@@ -655,7 +631,7 @@ Schedule text:
             model="gpt-4o-mini",
             temperature=0,
             response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
         print(f"[WARN] OpenAI date-completion call failed for course {course_id}: {e}")
@@ -704,6 +680,7 @@ Schedule text:
     print(f"[INFO] Date-completion applied {applied} updates for course {course_id}.")
     return exams
 
+
 def extract_page_slug_from_html(html: str) -> Optional[str]:
     """
     Looks for Canvas internal page links like /courses/<id>/pages/<slug>
@@ -717,6 +694,7 @@ def extract_page_slug_from_html(html: str) -> Optional[str]:
         return match.group(1)
 
     return None
+
 
 def clean_canvas_datetime_to_date(value: Optional[str]) -> Optional[str]:
     if not value or not isinstance(value, str):
@@ -786,8 +764,8 @@ def normalize_canvas_assignment(assignment: dict) -> dict:
         "confidence": 0.98,
         "details": {
             "points_possible": assignment.get("points_possible"),
-            "submission_type": ", ".join(submission_types) if submission_types else None
-        }
+            "submission_type": ", ".join(submission_types) if submission_types else None,
+        },
     }
 
     normalized["item_hash"] = hash_item(
@@ -796,7 +774,7 @@ def normalize_canvas_assignment(assignment: dict) -> dict:
         subtype=normalized["subtype"],
         start_date=normalized["start_date"],
         due_date=normalized["due_date"],
-        external_id=normalized["external_id"]
+        external_id=normalized["external_id"],
     )
 
     return normalized
@@ -948,11 +926,7 @@ def ingest_syllabus_text(
     latest_snapshot = get_latest_syllabus_snapshot(db, course.id)
 
     if latest_snapshot and latest_snapshot.content_hash == content_hash:
-        cached_items = (
-            db.query(Item)
-            .filter(Item.snapshot_id == latest_snapshot.id)
-            .all()
-        )
+        cached_items = db.query(Item).filter(Item.snapshot_id == latest_snapshot.id).all()
 
         response_items = [_item_response_payload_from_db(item) for item in cached_items]
         all_response_items = response_items + assignment_result.get("items", [])
@@ -1032,9 +1006,7 @@ def ingest_syllabus_text(
         )
 
         db.add(item)
-        response_items.append(
-            _item_response_payload_from_parsed(parsed_item, item_hash_value)
-        )
+        response_items.append(_item_response_payload_from_parsed(parsed_item, item_hash_value))
 
     db.commit()
 
@@ -1064,12 +1036,7 @@ def ingest_syllabus_text(
     }
 
 
-def persist_canvas_assignment_items(
-    db: Session,
-    course: Course,
-    course_id: str,
-    assignments: list
-):
+def persist_canvas_assignment_items(db: Session, course: Course, course_id: str, assignments: list):
     normalized_assignments = [
         normalize_canvas_assignment(a)
         for a in assignments
@@ -1083,8 +1050,7 @@ def persist_canvas_assignment_items(
     latest_assignment_snapshot = (
         db.query(SourceSnapshot)
         .filter(
-            SourceSnapshot.course_id == course.id,
-            SourceSnapshot.source_type == "assignment_feed"
+            SourceSnapshot.course_id == course.id, SourceSnapshot.source_type == "assignment_feed"
         )
         .order_by(SourceSnapshot.created_at.desc())
         .first()
@@ -1092,30 +1058,30 @@ def persist_canvas_assignment_items(
 
     if latest_assignment_snapshot and latest_assignment_snapshot.content_hash == content_hash:
         cached_items = (
-            db.query(Item)
-            .filter(Item.snapshot_id == latest_assignment_snapshot.id)
-            .all()
+            db.query(Item).filter(Item.snapshot_id == latest_assignment_snapshot.id).all()
         )
 
         response_items = []
         for item in cached_items:
-            response_items.append({
-                "title": item.title,
-                "item_type": item.item_type,
-                "subtype": item.subtype,
-                "start_date": item.start_date,
-                "due_date": item.due_date,
-                "description": item.description,
-                "location": item.location,
-                "external_id": item.external_id,
-                "confidence": item.confidence,
-                "item_hash": item.item_hash
-            })
+            response_items.append(
+                {
+                    "title": item.title,
+                    "item_type": item.item_type,
+                    "subtype": item.subtype,
+                    "start_date": item.start_date,
+                    "due_date": item.due_date,
+                    "description": item.description,
+                    "location": item.location,
+                    "external_id": item.external_id,
+                    "confidence": item.confidence,
+                    "item_hash": item.item_hash,
+                }
+            )
 
         return {
             "changed": False,
             "snapshot_id": latest_assignment_snapshot.id,
-            "items": response_items
+            "items": response_items,
         }
 
     new_snapshot = SourceSnapshot(
@@ -1124,7 +1090,7 @@ def persist_canvas_assignment_items(
         source_name="canvas_assignments",
         source_identifier=course_id,
         content_hash=content_hash,
-        normalized_text=normalized_feed_text
+        normalized_text=normalized_feed_text,
     )
 
     db.add(new_snapshot)
@@ -1147,7 +1113,7 @@ def persist_canvas_assignment_items(
             external_id=assignment_item.get("external_id"),
             item_hash=assignment_item.get("item_hash"),
             confidence=assignment_item.get("confidence"),
-            status="active"
+            status="active",
         )
         db.add(item)
         db.flush()
@@ -1156,30 +1122,29 @@ def persist_canvas_assignment_items(
         assignment_detail = AssignmentDetail(
             item_id=item.id,
             points_possible=details.get("points_possible"),
-            submission_type=details.get("submission_type")
+            submission_type=details.get("submission_type"),
         )
         db.add(assignment_detail)
 
-        response_items.append({
-            "title": assignment_item.get("title"),
-            "item_type": assignment_item.get("item_type"),
-            "subtype": assignment_item.get("subtype"),
-            "start_date": assignment_item.get("start_date"),
-            "due_date": assignment_item.get("due_date"),
-            "description": assignment_item.get("description"),
-            "location": assignment_item.get("location"),
-            "external_id": assignment_item.get("external_id"),
-            "confidence": assignment_item.get("confidence"),
-            "item_hash": assignment_item.get("item_hash")
-        })
+        response_items.append(
+            {
+                "title": assignment_item.get("title"),
+                "item_type": assignment_item.get("item_type"),
+                "subtype": assignment_item.get("subtype"),
+                "start_date": assignment_item.get("start_date"),
+                "due_date": assignment_item.get("due_date"),
+                "description": assignment_item.get("description"),
+                "location": assignment_item.get("location"),
+                "external_id": assignment_item.get("external_id"),
+                "confidence": assignment_item.get("confidence"),
+                "item_hash": assignment_item.get("item_hash"),
+            }
+        )
 
     db.commit()
 
-    return {
-        "changed": True,
-        "snapshot_id": new_snapshot.id,
-        "items": response_items
-    }
+    return {"changed": True, "snapshot_id": new_snapshot.id, "items": response_items}
+
 
 # ----- Endpoint -----
 @app.post("/parse")
@@ -1293,7 +1258,7 @@ Text:
             model="gpt-4o-mini",
             temperature=0,
             response_format={"type": "json_object"},
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
@@ -1308,23 +1273,17 @@ Text:
     if "items" not in parsed or not isinstance(parsed["items"], list):
         raise HTTPException(status_code=422, detail="LLM output missing 'items' array")
 
-    items = [
-        sanitize_extracted_item_dates(item, req.text, req.term)
-        for item in parsed["items"]
-    ]
+    items = [sanitize_extracted_item_dates(item, req.text, req.term) for item in parsed["items"]]
 
-    avg_conf = (
-        sum(i.get("confidence", 0) for i in items) / len(items)
-        if items else 0.0
-    )
+    avg_conf = sum(i.get("confidence", 0) for i in items) / len(items) if items else 0.0
 
     final_output = {
         "items": items,
         "metadata": {
             "course_id": req.course_id,
             "source": req.source,
-            "extraction_confidence": round(avg_conf, 3)
-        }
+            "extraction_confidence": round(avg_conf, 3),
+        },
     }
 
     try:
@@ -1334,11 +1293,9 @@ Text:
 
     return final_output
 
+
 @app.post("/canvas/ingest/{course_id}")
-def ingest_canvas_course(
-    course_id: str,
-    db: Session = Depends(get_db)
-):
+def ingest_canvas_course(course_id: str, db: Session = Depends(get_db)):
     course_name = fetch_course_name(course_id)
     course = get_or_create_course(db, course_id, course_name)
 
@@ -1346,10 +1303,7 @@ def ingest_canvas_course(
     print(f"[INFO] Fetched {len(assignments)} assignments from Canvas for course {course_id}.")
 
     assignment_result = persist_canvas_assignment_items(
-        db=db,
-        course=course,
-        course_id=course_id,
-        assignments=assignments
+        db=db, course=course, course_id=course_id, assignments=assignments
     )
 
     syllabus_html = None
@@ -1430,12 +1384,11 @@ def ingest_canvas_course(
                 syllabus_source_name = source_name or module_file["title"] or "module_syllabus_file"
                 syllabus_source_identifier = str(module_file["file_id"])
 
-
     # Final failure
     if final_text is None and (not syllabus_html or len(strip_html(syllabus_html)) < 50):
         raise HTTPException(
             status_code=404,
-            detail="No usable syllabus found in syllabus_body, pages, or module files"
+            detail="No usable syllabus found in syllabus_body, pages, or module files",
         )
 
     # Prepare final text
@@ -1529,4 +1482,3 @@ async def ingest_manual_syllabus_file(
         sync_to_notion=sync_to_notion,
         parse_source="manual",
     )
-

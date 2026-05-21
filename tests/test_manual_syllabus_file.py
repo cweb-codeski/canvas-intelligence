@@ -6,8 +6,6 @@ from unittest.mock import patch
 from docx import Document
 
 os.environ.setdefault("OPENAI_API_KEY", "test-openai-key")
-os.environ.setdefault("CANVAS_BASE_URL", "https://example.instructure.com")
-os.environ.setdefault("CANVAS_ACCESS_TOKEN", "test-canvas-token")
 os.environ.setdefault("ENABLE_NOTION_SYNC", "false")
 
 from fastapi.testclient import TestClient

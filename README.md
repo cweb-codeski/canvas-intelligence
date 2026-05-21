@@ -203,14 +203,22 @@ Validates Notion API configuration and database schema.
 
 ## Environment Variables
 
-Set the following before running:
+Required for all deployments:
 
 - `OPENAI_API_KEY`
+
+Required only for Canvas ingestion (`POST /canvas/ingest/{course_id}`):
+
 - `CANVAS_BASE_URL`
 - `CANVAS_ACCESS_TOKEN`
+
+Optional Notion sync (set `ENABLE_NOTION_SYNC=false` if Notion is not configured):
+
 - `NOTION_API_KEY`
 - `NOTION_DATABASE_ID`
 - `ENABLE_NOTION_SYNC`
+
+Manual syllabus paste and file upload (`POST /manual/syllabus`, `POST /manual/syllabus/file`) do not require Canvas credentials.
 
 ---
 
