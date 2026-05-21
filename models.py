@@ -41,7 +41,7 @@ class Item(Base):
     course_id = Column(Integer, ForeignKey("courses.id"), nullable=False, index=True)
     snapshot_id = Column(Integer, ForeignKey("source_snapshots.id"), nullable=False, index=True)
 
-    item_type = Column(String, nullable=False, index=True)  
+    item_type = Column(String, nullable=False, index=True)
     # exam, assignment, reading, lecture_topic
 
     subtype = Column(String, nullable=True)
@@ -59,11 +59,12 @@ class Item(Base):
     # Canvas assignment id, module item id, examID, etc.
 
     confidence = Column(Float, nullable=True)
-    status = Column(String, nullable=True)  
+    status = Column(String, nullable=True)
     # active, removed, updated
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 
 class ExamDetail(Base):
     __tablename__ = "exam_details"
@@ -73,6 +74,7 @@ class ExamDetail(Base):
     exam_number = Column(String, nullable=True)
     exam_format = Column(String, nullable=True)
 
+
 class AssignmentDetail(Base):
     __tablename__ = "assignment_details"
 
@@ -80,6 +82,7 @@ class AssignmentDetail(Base):
     item_id = Column(Integer, ForeignKey("items.id"), unique=True, nullable=False)
     points_possible = Column(Float, nullable=True)
     submission_type = Column(String, nullable=True)
+
 
 class ReadingDetail(Base):
     __tablename__ = "reading_details"

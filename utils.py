@@ -25,9 +25,7 @@ RELATIVE_DATE_PATTERNS = [
     r"\b(?:tomorrow|today)\b",
 ]
 
-WEEKDAY_ONLY_RE = re.compile(
-    r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b"
-)
+WEEKDAY_ONLY_RE = re.compile(r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
 
 
 def normalize_text(text: str) -> str:
@@ -90,9 +88,7 @@ def has_relative_date_language(*texts: str) -> bool:
         return True
 
     if WEEKDAY_ONLY_RE.search(combined):
-        has_month = any(
-            re.search(pattern, combined) for pattern in MONTH_NAME_PATTERNS.values()
-        )
+        has_month = any(re.search(pattern, combined) for pattern in MONTH_NAME_PATTERNS.values())
         has_year = re.search(r"\b20\d{2}\b", combined) is not None
         if not has_month and not has_year:
             return True
@@ -150,7 +146,7 @@ def hash_item(
     subtype: str = "",
     start_date: str = "",
     due_date: str = "",
-    external_id: str = ""
+    external_id: str = "",
 ) -> str:
     components = [
         normalize(item_type),
@@ -158,7 +154,7 @@ def hash_item(
         normalize(subtype),
         normalize(start_date),
         normalize(due_date),
-        normalize(external_id)
+        normalize(external_id),
     ]
 
     combined = "|".join(components)

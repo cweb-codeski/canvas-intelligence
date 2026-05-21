@@ -18,22 +18,16 @@ REQUEST_TIMEOUT_SECONDS = 10
 headers = {
     "Authorization": f"Bearer {NOTION_API_KEY}",
     "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
 }
 
 
 def check_notion_config():
     if not ENABLE_NOTION_SYNC:
-        return {
-            "status": "skipped",
-            "reason": "ENABLE_NOTION_SYNC is false"
-        }
+        return {"status": "skipped", "reason": "ENABLE_NOTION_SYNC is false"}
 
     if not NOTION_API_KEY or not NOTION_DATABASE_ID:
-        return {
-            "status": "error",
-            "reason": "NOTION_API_KEY or NOTION_DATABASE_ID is not set"
-        }
+        return {"status": "error", "reason": "NOTION_API_KEY or NOTION_DATABASE_ID is not set"}
 
     url = f"{NOTION_API_URL}/databases/{NOTION_DATABASE_ID}"
     response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
@@ -42,15 +36,11 @@ def check_notion_config():
         return {
             "status": "error",
             "code": 401,
-            "reason": "Unauthorized: invalid NOTION_API_KEY or missing workspace access"
+            "reason": "Unauthorized: invalid NOTION_API_KEY or missing workspace access",
         }
 
     if not response.ok:
-        return {
-            "status": "error",
-            "code": response.status_code,
-            "reason": response.text
-        }
+        return {"status": "error", "code": response.status_code, "reason": response.text}
 
     data = response.json()
     props = data.get("properties", {})
@@ -59,7 +49,7 @@ def check_notion_config():
         "Title": "title",
         "Course": "rich_text",
         "Item type": "rich_text",
-        "Event_hash": "rich_text"
+        "Event_hash": "rich_text",
     }
 
     missing = []
@@ -71,11 +61,7 @@ def check_notion_config():
         if actual != expected:
             missing.append(f"{name} type mismatch: {actual} (expected {expected})")
 
-    return {
-        "status": "ok",
-        "missing_properties": missing,
-        "database_name": data.get("title")
-    }
+    return {"status": "ok", "missing_properties": missing, "database_name": data.get("title")}
 
 
 def create_notion_item(item, course_name):
@@ -83,110 +69,34 @@ def create_notion_item(item, course_name):
         return {
             "status": "skipped",
             "title": item.get("title"),
-            "reason": "ENABLE_NOTION_SYNC is false"
+            "reason": "ENABLE_NOTION_SYNC is false",
         }
 
     item_hash = item.get("item_hash")
 
     if item_hash and item_exists(item_hash):
         print("Skipping duplicate:", item.get("title"))
-        return {
-            "status": "skipped",
-            "title": item.get("title"),
-            "reason": "duplicate Event_hash"
-        }
+        return {"status": "skipped", "title": item.get("title"), "reason": "duplicate Event_hash"}
 
     notion_date = item.get("start_date") or item.get("due_date")
 
     payload = {
-        "parent": {
-            "database_id": NOTION_DATABASE_ID
-        },
+        "parent": {"database_id": NOTION_DATABASE_ID},
         "properties": {
-            "Title": {
-                "title": [
-                    {
-                        "text": {
-                            "content": item.get("title") or "Untitled"
-                        }
-                    }
-                ]
-            },
-            "Course": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": course_name or ""
-                        }
-                    }
-                ]
-            },
-            "Item type": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("item_type") or ""
-                        }
-                    }
-                ]
-            },
-            "Subtype": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("subtype") or ""
-                        }
-                    }
-                ]
-            },
-            "ExamID": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("external_id") or ""
-                        }
-                    }
-                ]
-            },
-            "Notes": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("description") or ""
-                        }
-                    }
-                ]
-            },
-            "Confidence": {
-                "number": item.get("confidence")
-            },
-            "Location": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("location") or ""
-                        }
-                    }
-                ]
-            },
-            "Event_hash": {
-                "rich_text": [
-                    {
-                        "text": {
-                            "content": item.get("item_hash") or ""
-                        }
-                    }
-                ]
-            }
-        }
+            "Title": {"title": [{"text": {"content": item.get("title") or "Untitled"}}]},
+            "Course": {"rich_text": [{"text": {"content": course_name or ""}}]},
+            "Item type": {"rich_text": [{"text": {"content": item.get("item_type") or ""}}]},
+            "Subtype": {"rich_text": [{"text": {"content": item.get("subtype") or ""}}]},
+            "ExamID": {"rich_text": [{"text": {"content": item.get("external_id") or ""}}]},
+            "Notes": {"rich_text": [{"text": {"content": item.get("description") or ""}}]},
+            "Confidence": {"number": item.get("confidence")},
+            "Location": {"rich_text": [{"text": {"content": item.get("location") or ""}}]},
+            "Event_hash": {"rich_text": [{"text": {"content": item.get("item_hash") or ""}}]},
+        },
     }
 
     if notion_date:
-        payload["properties"]["Date"] = {
-            "date": {
-                "start": notion_date
-            }
-        }
+        payload["properties"]["Date"] = {"date": {"start": notion_date}}
 
     url = "https://api.notion.com/v1/pages"
     response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
@@ -200,13 +110,10 @@ def create_notion_item(item, course_name):
             "status": "failed",
             "title": item.get("title"),
             "reason": msg,
-            "status_code": response.status_code
+            "status_code": response.status_code,
         }
 
-    return {
-        "status": "created",
-        "title": item.get("title")
-    }
+    return {"status": "created", "title": item.get("title")}
 
 
 def item_exists(item_hash):
@@ -215,14 +122,7 @@ def item_exists(item_hash):
 
     url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
 
-    payload = {
-        "filter": {
-            "property": "Event_hash",
-            "rich_text": {
-                "equals": item_hash
-            }
-        }
-    }
+    payload = {"filter": {"property": "Event_hash", "rich_text": {"equals": item_hash}}}
 
     response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
 

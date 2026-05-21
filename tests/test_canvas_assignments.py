@@ -211,6 +211,5 @@ def test_build_assignment_feed_text_two_assignments_and_missing_due():
         "submission_types=online_quiz"
     )
     assert lines[1] == (
-        "id=2 | name=Untitled Assignment | due_date=null | points_possible=None | "
-        "submission_types="
+        "id=2 | name=Untitled Assignment | due_date=null | points_possible=None | submission_types="
     )

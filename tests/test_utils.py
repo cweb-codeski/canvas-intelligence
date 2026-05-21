@@ -56,14 +56,17 @@ def test_hash_item_empty_optional_fields():
 def test_hash_item_all_fields():
     combined = "reading|chapter 1|textbook|2026-01-01|2026-01-15|canvas-42"
     expected = hashlib.sha256(combined.encode("utf-8")).hexdigest()
-    assert hash_item(
-        "Reading",
-        "Chapter 1",
-        subtype="Textbook",
-        start_date="2026-01-01",
-        due_date="2026-01-15",
-        external_id="canvas-42",
-    ) == expected
+    assert (
+        hash_item(
+            "Reading",
+            "Chapter 1",
+            subtype="Textbook",
+            start_date="2026-01-01",
+            due_date="2026-01-15",
+            external_id="canvas-42",
+        )
+        == expected
+    )
 
 
 def test_hash_item_case_insensitive_components():
