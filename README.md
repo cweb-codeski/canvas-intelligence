@@ -188,8 +188,8 @@ Copy [.env.example](.env.example) to `.env`. Prefer a `.env` file over exporting
 |----------|---------------|-------|
 | `OPENAI_API_KEY` | **Always** | Missing → `RuntimeError` at import; app will not start |
 | `ENABLE_NOTION_SYNC` | Optional | Default in code: `true`. Set `false` for local dev and tests |
-| `NOTION_API_KEY` | `ENABLE_NOTION_SYNC=true` | Import-time check in `notion.py` |
-| `NOTION_DATABASE_ID` | `ENABLE_NOTION_SYNC=true` | Import-time check in `notion.py` |
+| `NOTION_API_KEY` | Notion check/sync (`ENABLE_NOTION_SYNC=true`) | Required when calling `GET /notion/status` or syncing items; not required to start the app |
+| `NOTION_DATABASE_ID` | Notion check/sync (`ENABLE_NOTION_SYNC=true`) | Same as `NOTION_API_KEY` |
 | `CANVAS_BASE_URL` | Canvas endpoints only | Lazy; not required to start the app |
 | `CANVAS_ACCESS_TOKEN` | Canvas endpoints only | Lazy; missing Canvas vars → **503** on `/canvas/ingest/*` |
 

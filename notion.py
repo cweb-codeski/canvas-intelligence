@@ -2,35 +2,45 @@ import os
 
 import requests
 
-NOTION_API_KEY = os.environ.get("NOTION_API_KEY")
-NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
-ENABLE_NOTION_SYNC = os.environ.get("ENABLE_NOTION_SYNC", "true").lower() == "true"
-
-if ENABLE_NOTION_SYNC:
-    if not NOTION_API_KEY:
-        raise RuntimeError("NOTION_API_KEY environment variable not set")
-    if not NOTION_DATABASE_ID:
-        raise RuntimeError("NOTION_DATABASE_ID environment variable not set")
-
 NOTION_API_URL = "https://api.notion.com/v1"
 REQUEST_TIMEOUT_SECONDS = 10
+MISSING_CREDENTIALS_REASON = "NOTION_API_KEY or NOTION_DATABASE_ID is not set"
 
-headers = {
-    "Authorization": f"Bearer {NOTION_API_KEY}",
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json",
-}
+
+def _is_notion_sync_enabled() -> bool:
+    return os.environ.get("ENABLE_NOTION_SYNC", "true").lower() == "true"
+
+
+def _notion_credentials() -> tuple[str | None, str | None]:
+    api_key = (os.environ.get("NOTION_API_KEY") or "").strip() or None
+    database_id = (os.environ.get("NOTION_DATABASE_ID") or "").strip() or None
+    return api_key, database_id
+
+
+def _credentials_missing() -> bool:
+    api_key, database_id = _notion_credentials()
+    return not api_key or not database_id
+
+
+def _notion_headers() -> dict:
+    api_key, _ = _notion_credentials()
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
 
 
 def check_notion_config():
-    if not ENABLE_NOTION_SYNC:
+    if not _is_notion_sync_enabled():
         return {"status": "skipped", "reason": "ENABLE_NOTION_SYNC is false"}
 
-    if not NOTION_API_KEY or not NOTION_DATABASE_ID:
-        return {"status": "error", "reason": "NOTION_API_KEY or NOTION_DATABASE_ID is not set"}
+    if _credentials_missing():
+        return {"status": "error", "reason": MISSING_CREDENTIALS_REASON}
 
-    url = f"{NOTION_API_URL}/databases/{NOTION_DATABASE_ID}"
-    response = requests.get(url, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+    _, database_id = _notion_credentials()
+    url = f"{NOTION_API_URL}/databases/{database_id}"
+    response = requests.get(url, headers=_notion_headers(), timeout=REQUEST_TIMEOUT_SECONDS)
 
     if response.status_code == 401:
         return {
@@ -65,13 +75,21 @@ def check_notion_config():
 
 
 def create_notion_item(item, course_name):
-    if not ENABLE_NOTION_SYNC:
+    if not _is_notion_sync_enabled():
         return {
             "status": "skipped",
             "title": item.get("title"),
             "reason": "ENABLE_NOTION_SYNC is false",
         }
 
+    if _credentials_missing():
+        return {
+            "status": "failed",
+            "title": item.get("title"),
+            "reason": MISSING_CREDENTIALS_REASON,
+        }
+
+    _, database_id = _notion_credentials()
     item_hash = item.get("item_hash")
 
     if item_hash and item_exists(item_hash):
@@ -81,7 +99,7 @@ def create_notion_item(item, course_name):
     notion_date = item.get("start_date") or item.get("due_date")
 
     payload = {
-        "parent": {"database_id": NOTION_DATABASE_ID},
+        "parent": {"database_id": database_id},
         "properties": {
             "Title": {"title": [{"text": {"content": item.get("title") or "Untitled"}}]},
             "Course": {"rich_text": [{"text": {"content": course_name or ""}}]},
@@ -99,7 +117,12 @@ def create_notion_item(item, course_name):
         payload["properties"]["Date"] = {"date": {"start": notion_date}}
 
     url = "https://api.notion.com/v1/pages"
-    response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+    response = requests.post(
+        url,
+        json=payload,
+        headers=_notion_headers(),
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
 
     if not response.ok:
         msg = response.text
@@ -117,14 +140,23 @@ def create_notion_item(item, course_name):
 
 
 def item_exists(item_hash):
-    if not ENABLE_NOTION_SYNC:
+    if not _is_notion_sync_enabled():
         return False
 
-    url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+    if _credentials_missing():
+        return False
+
+    _, database_id = _notion_credentials()
+    url = f"https://api.notion.com/v1/databases/{database_id}/query"
 
     payload = {"filter": {"property": "Event_hash", "rich_text": {"equals": item_hash}}}
 
-    response = requests.post(url, json=payload, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
+    response = requests.post(
+        url,
+        json=payload,
+        headers=_notion_headers(),
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
 
     if not response.ok:
         print("Query error:", response.text)
