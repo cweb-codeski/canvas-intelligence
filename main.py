@@ -1034,7 +1034,11 @@ from ingestion import (  # noqa: E402, I001
 
 
 @app.post("/canvas/ingest/{course_id}")
-def ingest_canvas_course(course_id: str, db: Session = Depends(get_db)):
+def ingest_canvas_course(
+    course_id: str,
+    sync_to_notion: bool = True,
+    db: Session = Depends(get_db),
+):
     course_name = fetch_course_name(course_id)
     course = get_or_create_course(db, course_id, course_name)
 
@@ -1144,7 +1148,7 @@ def ingest_canvas_course(course_id: str, db: Session = Depends(get_db)):
         source_name=syllabus_source_name or "syllabus",
         source_identifier=syllabus_source_identifier or course_id,
         assignment_result=assignment_result,
-        sync_to_notion=True,
+        sync_to_notion=sync_to_notion,
         parse_source="canvas",
     )
 

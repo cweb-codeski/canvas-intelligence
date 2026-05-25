@@ -113,7 +113,7 @@ flowchart TD
 
 - Duplicate prevention via `item_hash` / `Event_hash`
 - Config check via `GET /notion/status`
-- Per-request `sync_to_notion` on manual endpoints; Canvas ingest always attempts sync when enabled
+- Per-request `sync_to_notion` on manual and Canvas ingest endpoints
 
 ---
 
@@ -197,8 +197,7 @@ Copy [.env.example](.env.example) to `.env`. Prefer a `.env` file over exporting
 
 | Flag | Applies to | Behavior |
 |------|------------|----------|
-| `sync_to_notion` | `POST /manual/syllabus`, `POST /manual/syllabus/file` | Default `true`. `false` → `notion_config.status: "not_checked"` and no `check_notion_config()` call |
-| *(none)* | `POST /canvas/ingest/{course_id}` | Always uses `sync_to_notion=true` internally |
+| `sync_to_notion` | `POST /manual/syllabus`, `POST /manual/syllabus/file`, `POST /canvas/ingest/{course_id}` (query) | Default `true`. `false` → `notion_config.status: "not_checked"` and no `check_notion_config()` call |
 
 ### Recommended demo profiles
 
@@ -312,10 +311,22 @@ Ingest a Canvas course: assignment feed + syllabus discovery.
 4. Course page whose title contains `syllabus`
 5. Syllabus-like file in modules
 
+**Query parameters:**
+
+| Param | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `sync_to_notion` | no | `true` | Set `false` to skip Notion config check and sync for this ingest (syllabus and assignment items) |
+
 **Example** (use your own numeric Canvas course id, not a real production example):
 
 ```bash
 curl -X POST http://127.0.0.1:8000/canvas/ingest/12345678
+```
+
+Skip Notion for a Canvas ingest:
+
+```bash
+curl -X POST "http://127.0.0.1:8000/canvas/ingest/12345678?sync_to_notion=false"
 ```
 
 **Errors:**
@@ -330,7 +341,7 @@ External HTTP (Canvas, Notion) uses a **10 second** timeout.
 
 **Finding `course_id`:** numeric id from your Canvas course URL (e.g. `https://<school>.instructure.com/courses/<course_id>`).
 
-Canvas ingest does not accept `sync_to_notion` on the request; Notion sync follows `ENABLE_NOTION_SYNC` when syllabus or assignment feed changes.
+When `sync_to_notion=true` (default), Notion sync follows `ENABLE_NOTION_SYNC` when syllabus or assignment feed changes. When `sync_to_notion=false`, all Notion sync for that ingest is skipped (syllabus and assignment items).
 
 ---
 
@@ -497,7 +508,6 @@ Use [.env.example](.env.example) for placeholders only.
 - **Single-user MVP** — no authentication or multi-tenant isolation
 - **SQLite** — `sqlite:///./app.db`; not ideal for concurrent multi-writer production
 - **Canvas auth** — personal access token in env; school-approved OAuth is the intended future direction
-- **Canvas ingest** — cannot set `sync_to_notion=false` per request (unlike manual endpoints)
 - **LLM extraction** — uses `gpt-4o-mini` (costs apply); may omit or mis-parse items; `should_keep_item` filters low-quality rows
 - **Dates** — model must not invent dates; `term` helps infer year only when rules in the parse prompt allow it
 - **Assignment vs syllabus snapshots** — separate; unchanged syllabus may still trigger Notion sync for changed assignment feed
