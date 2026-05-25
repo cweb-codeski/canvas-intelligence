@@ -480,6 +480,7 @@ python -m ruff format --check .
 | `test_database_url.py` | `DATABASE_URL` honored at import; pytest avoids default `./app.db` |
 | `test_db_isolation.py` | TestClient uses isolated DB via `get_db` override |
 | `test_manual_syllabus.py` | Paste, snapshots, empty text 400 |
+| `test_golden_syllabus_ingest.py` | Golden syllabus fixture; multi-item ingest regression (mocked parse) |
 | `test_manual_syllabus_file.py` | txt/pdf/docx upload, unsupported types |
 | `test_canvas_config.py` | Start without Canvas; 503 on ingest |
 | `test_ingest_notion_sync.py` | `sync_to_notion` / `notion_config` gating |
