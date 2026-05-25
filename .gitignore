@@ -16,6 +16,8 @@ app.db
 .DS_Store
 .vscode/
 
+*.zip
+
 # Local screenshots and exports
 *.png
 *.html
