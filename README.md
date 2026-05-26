@@ -8,6 +8,8 @@ Manual syllabus **paste** and **file upload** work without Canvas credentials. C
 
 ## Quick start (manual demo, no Canvas or Notion)
 
+**Smoke-test runbook:** [docs/MANUAL_DEMO.md](docs/MANUAL_DEMO.md) (checklist, file upload, response fields, troubleshooting).
+
 1. **Prerequisites:** Python 3.11+, `pip`
 2. **Install:**
 
@@ -40,7 +42,7 @@ Manual syllabus **paste** and **file upload** work without Canvas credentials. C
      -d "{\"course_key\":\"demo-101\",\"course_name\":\"Demo Course\",\"text\":\"Homework 1 due 2026-02-10\\nMidterm Exam March 1\",\"sync_to_notion\":false}"
    ```
 
-6. **Verify:** open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) (Swagger UI). First run creates `./app.db`.
+6. **Verify:** open [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs) (Swagger UI). First run creates `./app.db`. Repeat the same curl → `changed: false` (see runbook).
 
 ---
 
@@ -173,8 +175,10 @@ The app creates `./app.db` on first import (`Base.metadata.create_all` in `main.
 
 | URL | Purpose |
 |-----|---------|
-| `http://127.0.0.1:8000/docs` | FastAPI Swagger UI |
-| `http://127.0.0.1:8000/notion/status` | Notion config check (or `skipped` when disabled) |
+| `http://127.0.0.1:8000/docs` | FastAPI Swagger UI (primary check for manual demo) |
+| `http://127.0.0.1:8000/notion/status` | Optional; Notion config (or `skipped` when `ENABLE_NOTION_SYNC=false`) |
+
+Manual smoke checklist: [docs/MANUAL_DEMO.md](docs/MANUAL_DEMO.md).
 
 ---
 
@@ -485,6 +489,8 @@ python -m ruff format --check .
 | `test_canvas_config.py` | Start without Canvas; 503 on ingest |
 | `test_ingest_notion_sync.py` | `sync_to_notion` / `notion_config` gating |
 | `test_syllabus_snapshot.py`, `test_canvas_*.py` | Canvas pagination, assignments, snapshots |
+
+Manual demo smoke test: [docs/MANUAL_DEMO.md](docs/MANUAL_DEMO.md).
 
 See [AGENTS.md](AGENTS.md) for contributor workflow and safety rules.
 
