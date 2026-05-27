@@ -126,6 +126,16 @@ curl -X POST http://127.0.0.1:8000/manual/syllabus/file \
 Or use Swagger UI at `/docs` for paste and multipart file upload.
 
 ---
+## Compare parse models (dev)
+
+To compare different OpenAI parser models on persisted ingests:
+
+- Set `OPENAI_PARSE_MODEL` in `.env` and restart the server if you're relying on env loading.
+- Use different fictional `course_key` values for each model run (so snapshots/items don't overwrite).
+- Inspect `metadata.parse_model` in the ingest response to confirm which model was used.
+- Do not commit real syllabi or the parser output JSON.
+
+---
 
 ## Response fields to inspect
 

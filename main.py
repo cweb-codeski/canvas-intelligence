@@ -41,6 +41,22 @@ if not api_key:
 
 REQUEST_TIMEOUT_SECONDS = 10
 
+# Default model used for LLM extraction in `main.parse()`.
+DEFAULT_OPENAI_PARSE_MODEL = "gpt-4o-mini"
+
+
+def get_openai_parse_model() -> str:
+    """
+    Returns the OpenAI model to use for `main.parse()`.
+
+    Read `OPENAI_PARSE_MODEL` at call time so `.env` reload/restarts are respected.
+    """
+    raw = os.environ.get("OPENAI_PARSE_MODEL")
+    if raw is None or not raw.strip():
+        return DEFAULT_OPENAI_PARSE_MODEL
+    return raw.strip()
+
+
 client = OpenAI(api_key=api_key)
 
 
@@ -886,6 +902,8 @@ def parse(req: ParseRequest):
     if not req.text:
         raise HTTPException(status_code=400, detail="No syllabus text provided")
 
+    parse_model = get_openai_parse_model()
+
     term_context = ""
     if req.term:
         term_context = f"\nCourse term context: {req.term}\n"
@@ -1005,7 +1023,7 @@ Text:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=parse_model,
             temperature=0,
             response_format={"type": "json_object"},
             messages=[{"role": "user", "content": prompt}],
@@ -1033,6 +1051,7 @@ Text:
             "course_id": req.course_id,
             "source": req.source,
             "extraction_confidence": round(avg_conf, 3),
+            "parse_model": parse_model,
         },
     }
 
