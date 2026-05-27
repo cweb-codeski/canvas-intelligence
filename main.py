@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 from db import Base, engine, get_db
 from models import AssignmentDetail, Course, Item, SourceSnapshot
 from notion import check_notion_config, create_notion_item  # noqa: F401
-from utils import hash_item, hash_text, normalize_text, sanitize_extracted_item_dates
+from utils import (
+    hash_item,
+    hash_text,
+    normalize_text,
+    preprocess_lab_schedule_rows,
+    sanitize_extracted_item_dates,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -884,6 +890,8 @@ def parse(req: ParseRequest):
     if req.term:
         term_context = f"\nCourse term context: {req.term}\n"
 
+    parse_text = preprocess_lab_schedule_rows(req.text)
+
     prompt = f"""
 Extract structured academic items from the following Canvas course text.
 {term_context}
@@ -932,6 +940,20 @@ sessions, extract each as its own lecture row.
 or guest_lecture when appropriate.
 - A field trip should be item_type "lecture" with subtype "field_trip".
 
+Lab schedule rules:
+- Extract each dated lab schedule row as one item.
+- Regular lab meetings use item_type "lecture" and subtype "lab".
+- Lab practicals use item_type "exam" and subtype "lab_practical".
+- Use start_date for the first meeting date in the row.
+- For two-day lab rows such as 1/21,22, 1/28-29, or 4/29/30, use start_date for the \
+first date and due_date for the second date.
+- Put multiple topics from the same row in the description; do not split one lab row into \
+multiple items.
+- Experiment numbers like 16: / 17: / 18: inside a lab row are topics, not separate \
+schedule items.
+- Do not treat pre-lab quiz numbers in a schedule column as separate assignments unless \
+an explicit due date is given.
+
 Reading rules:
 - Extract readings only when they are specific and meaningful.
 - If a reading is clearly tied to a lecture, week, module, or class meeting, include that \
@@ -978,7 +1000,7 @@ item_type "exam", not "lecture".
 - Do not classfiy practical exams or assessments as lecture items, even if they occur \
 during a lab meeting
 Text:
-{req.text}
+{parse_text}
 """
 
     try:

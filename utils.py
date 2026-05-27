@@ -27,6 +27,43 @@ RELATIVE_DATE_PATTERNS = [
 
 WEEKDAY_ONLY_RE = re.compile(r"\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b")
 
+LAB_SCHEDULE_ANCHOR_RE = re.compile(r"\blab\s+schedule\b", re.IGNORECASE)
+
+# Day tokens common in flattened lab schedule tables (not bare weekdays in prose).
+_LAB_SCHEDULE_DAY_TOKENS = r"(?:WTh|W\s+TH|M\s+T|MT)"
+_LAB_SCHEDULE_DATE_TOKEN = r"\d{1,2}/\d{1,2}(?:,\d{1,2}|-\d{1,2}|/\d{1,2})?"
+_LAB_SCHEDULE_ROW_HEAD = (
+    rf"\bLab\s+\d{{1,2}}\s+"
+    rf"(?:{_LAB_SCHEDULE_DAY_TOKENS}\s+{_LAB_SCHEDULE_DATE_TOKEN}|{_LAB_SCHEDULE_DATE_TOKEN})"
+)
+LAB_SCHEDULE_ROW_HEAD_RE = re.compile(_LAB_SCHEDULE_ROW_HEAD)
+LAB_SCHEDULE_ROW_BOUNDARY_RE = re.compile(
+    rf"(?<=[^\n])\s+(?={_LAB_SCHEDULE_ROW_HEAD})",
+)
+
+
+def preprocess_lab_schedule_rows(text: str) -> str:
+    """Insert newlines before flattened lab schedule rows for parse prompts only.
+
+    Does not mutate stored syllabus text. Conservative: requires a Lab Schedule
+    anchor and at least two dated Lab N rows in that region.
+    """
+    if not text:
+        return text
+
+    anchor_match = LAB_SCHEDULE_ANCHOR_RE.search(text)
+    if not anchor_match:
+        return text
+
+    prefix = text[: anchor_match.start()]
+    region = text[anchor_match.start() :]
+
+    if len(LAB_SCHEDULE_ROW_HEAD_RE.findall(region)) < 2:
+        return text
+
+    processed_region = LAB_SCHEDULE_ROW_BOUNDARY_RE.sub("\n", region)
+    return prefix + processed_region
+
 
 def normalize_text(text: str) -> str:
     if not text:
@@ -79,6 +116,26 @@ def month_day_present_in_source(month: int, day: int, source_text: str) -> bool:
     return re.search(day_pattern, text) is not None
 
 
+def numeric_month_day_present_in_source(month: int, day: int, source_text: str) -> bool:
+    """Match conservative M/D-style schedule tokens (not bare integers or labels like 3A)."""
+    if not source_text or month < 1 or month > 12 or day < 1 or day > 31:
+        return False
+
+    patterns = [
+        rf"(?<!\d){month}/{day}(?:,\d{{1,2}}|-\d{{1,2}}|/\d{{1,2}})?(?!\d)",
+        rf"(?<!\d){month}/\d{{1,2}},{day}(?!\d)",
+        rf"(?<!\d){month}/\d{{1,2}}-{day}(?!\d)",
+        rf"(?<!\d){month}/\d{{1,2}}/{day}(?!\d)",
+    ]
+    return any(re.search(pattern, source_text) for pattern in patterns)
+
+
+def calendar_day_present_in_source(month: int, day: int, source_text: str) -> bool:
+    if month_day_present_in_source(month, day, source_text):
+        return True
+    return numeric_month_day_present_in_source(month, day, source_text)
+
+
 def has_relative_date_language(*texts: str) -> bool:
     combined = " ".join(t for t in texts if t).lower()
     if not combined:
@@ -124,14 +181,14 @@ def sanitize_extracted_item_dates(
         day = int(match.group(3))
 
         if has_relative_date_language(source_text, item_text):
-            if not month_day_present_in_source(month, day, source_text):
+            if not calendar_day_present_in_source(month, day, source_text):
                 item[field] = None
                 continue
 
         if year_explicit_in_source(year, source_text):
             continue
 
-        if term_year and month_day_present_in_source(month, day, source_text):
+        if term_year and calendar_day_present_in_source(month, day, source_text):
             item[field] = f"{term_year:04d}-{month:02d}-{day:02d}"
             continue
 
