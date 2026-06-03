@@ -130,3 +130,32 @@ def test_parse_uses_preprocessed_prompt_and_original_for_sanitize(
     _mock_sanitize.assert_called_once()
     sanitize_args = _mock_sanitize.call_args
     assert sanitize_args[0][1] == original
+
+
+@patch("main.sanitize_extracted_item_dates", side_effect=lambda item, *_a, **_k: item)
+@patch("main.client.chat.completions.create")
+def test_parse_prompt_uses_preprocessed_flattened_fixture(
+    mock_create,
+    _mock_sanitize,
+    minimal_parse_item,
+):
+    """Parse must send preprocess_lab_schedule_rows output to OpenAI, not raw normalize only."""
+    fixtures_dir = Path(__file__).resolve().parent / "fixtures"
+    original = (fixtures_dir / "bio999_flattened_lab_schedule.txt").read_text(encoding="utf-8")
+
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = json.dumps({"items": [minimal_parse_item]})
+    mock_create.return_value = mock_response
+
+    req = ParseRequest(
+        course_id="wire-flat-fixture",
+        source="manual",
+        text=original,
+        term="Spring 2026",
+    )
+    parse(req)
+
+    prompt = mock_create.call_args.kwargs["messages"][0]["content"]
+    assert "\nLab 6 MT 2/9-10" in prompt
+    assert "\nLab 7 W TH 2/11-12" in prompt
+    assert "Lab 6 MT 2/9-10 5 Exercise Epsilon: gram stain practice Lab 7" not in prompt
