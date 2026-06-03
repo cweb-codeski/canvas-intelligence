@@ -1,0 +1,29 @@
+---
+description: Require strategy validation before implementation for all coding-agent tasks
+alwaysApply: true
+---
+
+# Strategy Validation Requirement
+
+Before proposing or making implementation changes, validate the strategy.
+
+Do not assume the user's proposed diagnosis or implementation path is correct.
+
+For every non-trivial coding task:
+- Identify the strongest evidence supporting the proposed direction.
+- Identify the strongest evidence against it.
+- List assumptions that could be wrong.
+- Separate symptoms from likely root causes.
+- Check whether the issue could be caused by adjacent systems, including extraction, normalization, preprocessing, filtering, persistence, caching, tests, configuration, or docs.
+- Look for cheaper diagnostic steps before production code changes.
+- Flag scope creep, unnecessary refactors, premature schema changes, privacy risks, and security risks.
+- Prefer the smallest reversible change that increases confidence.
+- If the safer answer is to gather more evidence before changing code, say so.
+- If the proposed direction is not the best next step, recommend the better path clearly.
+
+Return a clear recommendation:
+1. Proceed with the proposed direction,
+2. Modify the direction,
+3. Pause and gather more evidence,
+or
+4. Reject the direction and do something else.
