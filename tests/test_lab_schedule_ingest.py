@@ -120,7 +120,9 @@ def test_lab_schedule_ingest_persists_labs_and_practicals(mock_parse):
         if item.item_type == "lecture":
             assert item.subtype == "lab"
             assert item.start_date is not None
+            assert item.due_date is None
         if item.item_type == "exam":
             assert item.subtype and "practical" in item.subtype
+            assert item.due_date is None
 
     mock_parse.assert_called_once()

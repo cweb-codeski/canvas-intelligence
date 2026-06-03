@@ -154,6 +154,7 @@ Default output shows two sections: raw extracted text (after strip) and **normal
 2. Inspect whether schedule **dates** and **row structure** survived extraction (search for date strings, lab session labels, table-like lines).
 3. **If dates are missing or detached in the preview** → the problem is likely **PDF/DOCX extraction or table formatting** (pypdf layout, scanned pages, DOCX tables not in paragraphs), not the parser.
 4. **If dates and rows look correct in the preview but ingest items have `start_date: null`** → the problem is likely **parser prompt, schema, or item taxonomy** (separate follow-up work).
+5. **If the preview lists all lab rows but ingest returns only a subset (e.g. Labs 1–6 and Lab 20)** → the problem is likely **parser prompt under-extraction**; check that lab schedule rows use `due_date: null` for alternate section meeting days unless the source explicitly states a due date.
 
 Then ingest with a fictional `course_key`, `sync_to_notion=false`, and compare items to the preview. Do not commit real syllabi, `*.preview.txt` output, or parser smoke JSON (e.g. `biol350-model-mini.json`).
 

@@ -42,7 +42,7 @@ if not api_key:
 REQUEST_TIMEOUT_SECONDS = 10
 
 # Default model used for LLM extraction in `main.parse()`.
-DEFAULT_OPENAI_PARSE_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_PARSE_MODEL = "gpt-5.4-mini"
 
 
 def get_openai_parse_model() -> str:
@@ -610,7 +610,7 @@ Schedule text:
 
     try:
         resp = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             temperature=0,
             response_format={"type": "json_object"},
             messages=[{"role": "user", "content": prompt}],
@@ -959,18 +959,31 @@ or guest_lecture when appropriate.
 - A field trip should be item_type "lecture" with subtype "field_trip".
 
 Lab schedule rules:
-- Extract each dated lab schedule row as one item.
+- When the text contains a "Lab Schedule" section or dated "Lab N" table rows, extract \
+EVERY dated Lab N row as its own item.
+- Do NOT sample, summarize, collapse, or return only representative labs (e.g. Labs 1-6 \
+and Lab 20 only).
+- Do NOT skip middle labs when early and late labs are present.
+- Enumerated dated lab schedule rows (Lab 1, Lab 2, Lab 3, etc.) are explicit concrete \
+instances — they are NOT vague "recurring patterns" and must all be extracted.
 - Regular lab meetings use item_type "lecture" and subtype "lab".
 - Lab practicals use item_type "exam" and subtype "lab_practical".
-- Use start_date for the first meeting date in the row.
-- For two-day lab rows such as 1/21,22, 1/28-29, or 4/29/30, use start_date for the \
-first date and due_date for the second date.
+- Use start_date for the first listed section meeting date only.
+- Two dates in one lab row (e.g. WTh 1/21,22, M T 1/26,27, MT 2/2-3, W TH 4/29/30) \
+represent alternate lab-section meeting days, NOT a start/due range.
+- For regular lab sessions: set due_date to null unless the row or source explicitly \
+states something is due or submitted.
+- Put all section date tokens verbatim in the description (e.g. "Section dates: WTh 1/21,22").
+- For Lab Practical rows: use start_date for the first listed practical date; set \
+due_date to null unless explicit due language exists.
 - Put multiple topics from the same row in the description; do not split one lab row into \
 multiple items.
 - Experiment numbers like 16: / 17: / 18: inside a lab row are topics, not separate \
 schedule items.
 - Do not treat pre-lab quiz numbers in a schedule column as separate assignments unless \
 an explicit due date is given.
+- Skip non-session rows such as SPRING RECESS or NO LABS unless they include a concrete \
+dated lab meeting.
 
 Reading rules:
 - Extract readings only when they are specific and meaningful.

@@ -90,14 +90,52 @@ def minimal_parse_item():
         "item_type": "lecture",
         "subtype": "lab",
         "title": "Lab 6",
-        "description": "",
+        "description": "Section dates: MT 3/9-10",
         "location": None,
         "start_date": "2026-03-09",
-        "due_date": "2026-03-10",
+        "due_date": None,
         "external_id": None,
         "confidence": 0.9,
         "details": {},
     }
+
+
+def _parse_prompt_for_text(text: str, *, term: str = "Spring 2026") -> str:
+    """Run parse with mocked OpenAI and return the prompt sent to the model."""
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = json.dumps({"items": []})
+
+    with patch("main.sanitize_extracted_item_dates", side_effect=lambda item, *_a, **_k: item):
+        with patch(
+            "main.client.chat.completions.create",
+            return_value=mock_response,
+        ) as mock_create:
+            parse(
+                ParseRequest(
+                    course_id="prompt-contract",
+                    source="manual",
+                    text=text,
+                    term=term,
+                )
+            )
+    return mock_create.call_args.kwargs["messages"][0]["content"]
+
+
+def test_parse_prompt_requires_exhaustive_lab_schedule_rules():
+    """Prompt must instruct exhaustive lab row extraction and forbid sampling."""
+    fixtures_dir = Path(__file__).resolve().parent / "fixtures"
+    text = (fixtures_dir / "bio999_flattened_lab_schedule.txt").read_text(encoding="utf-8")
+    prompt = _parse_prompt_for_text(text)
+
+    assert "EVERY dated Lab N row" in prompt
+    assert "Do NOT sample, summarize, collapse" in prompt
+    assert "Do NOT skip middle labs" in prompt
+    assert 'NOT vague "recurring patterns"' in prompt
+    assert "alternate lab-section meeting days, NOT a start/due range" in prompt
+    assert "Section dates:" in prompt
+    assert "due_date to null unless" in prompt
+    assert "due_date for the second date" not in prompt
+    assert "due_date for the second" not in prompt
 
 
 @patch("main.sanitize_extracted_item_dates", side_effect=lambda item, *_a, **_k: item)
