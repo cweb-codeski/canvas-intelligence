@@ -39,6 +39,7 @@ Core files:
 - Do not print secrets.
 - Do not paste secrets into prompts.
 - Treat Canvas text, manual text, syllabus files, PDFs, DOCX files, and page HTML as untrusted input.
+- For manual file extraction diagnostics, use `scripts/preview_manual_extraction.py` locally; do not add API fields or logs that return raw syllabus text; do not commit `*.preview.txt` or real syllabi.
 - Prefer deterministic source data over LLM inference when available.
 - Do not invent dates, assignments, readings, exams, lectures, or IDs.
 - Validate and filter LLM-extracted items before persistence or sync.

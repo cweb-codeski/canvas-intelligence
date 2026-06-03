@@ -300,6 +300,8 @@ curl -X POST http://127.0.0.1:8000/manual/syllabus/file ^
 
 Uploads are processed in memory. Do not commit uploaded course files to git.
 
+**Dev: preview extraction** — Before ingest, run [`scripts/preview_manual_extraction.py`](scripts/preview_manual_extraction.py) on a local `.txt`, `.pdf`, or `.docx` to inspect extracted text without OpenAI or DB writes. See [Preview extracted file text locally](docs/MANUAL_DEMO.md#preview-extracted-file-text-locally-dev) in the manual demo guide. Do not commit real syllabi or `*.preview.txt` output.
+
 ---
 
 ### `POST /canvas/ingest/{course_id}`
@@ -487,6 +489,7 @@ python -m ruff format --check .
 | `test_manual_syllabus.py` | Paste, snapshots, empty text 400 |
 | `test_golden_syllabus_ingest.py` | Golden syllabus fixture; multi-item ingest regression (mocked parse) |
 | `test_manual_syllabus_file.py` | txt/pdf/docx upload, unsupported types |
+| `test_extraction_preview_script.py` | Local `preview_manual_extraction.py` CLI (txt/docx, flags) |
 | `test_canvas_config.py` | Start without Canvas; 503 on ingest |
 | `test_ingest_notion_sync.py` | `sync_to_notion` / `notion_config` gating |
 | `test_syllabus_snapshot.py`, `test_canvas_*.py` | Canvas pagination, assignments, snapshots |
@@ -503,7 +506,7 @@ See [AGENTS.md](AGENTS.md) for contributor workflow and safety rules.
 
 - `.env`, `APIs.env`, or any file containing real API keys or tokens
 - `app.db` or other `*.db` files
-- Uploaded syllabus files or local upload folders
+- Uploaded syllabus files, local upload folders, or `*.preview.txt` extraction previews
 - `__pycache__/`, `.pyc`, virtualenv folders (`.venv/`, `venv/`)
 - Generated artifacts, ZIP archives, screenshots (`.png`), exported HTML (`.html`)
 

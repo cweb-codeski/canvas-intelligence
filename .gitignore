@@ -21,3 +21,6 @@ app.db
 # Local screenshots and exports
 *.png
 *.html
+
+# Local manual file extraction previews (scripts/preview_manual_extraction.py --output)
+*.preview.txt

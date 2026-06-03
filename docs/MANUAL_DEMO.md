@@ -126,6 +126,39 @@ curl -X POST http://127.0.0.1:8000/manual/syllabus/file \
 Or use Swagger UI at `/docs` for paste and multipart file upload.
 
 ---
+
+## Preview extracted file text locally (dev)
+
+Before ingesting a PDF or other file, inspect what the server will extract using the local preview script. This is the **preferred dev-only** way to diagnose extraction issues (table layout, missing dates, joined words) without changing API behavior.
+
+[`scripts/preview_manual_extraction.py`](../scripts/preview_manual_extraction.py):
+
+- Runs **locally** on your machine (no `uvicorn` required).
+- Uses the same `extract_text_from_manual_upload` helpers as `POST /manual/syllabus/file`.
+- Does **not** call OpenAI, does **not** write to the database, and does **not** appear in ingest API responses.
+- Supports `.txt` (UTF-8), `.pdf`, and `.docx`.
+
+**Examples** (replace the path with your local file; do not commit real syllabi or preview output):
+
+```bash
+python scripts/preview_manual_extraction.py path/to/syllabus.pdf
+python scripts/preview_manual_extraction.py path/to/syllabus.pdf --output ./local-extracted.preview.txt
+python scripts/preview_manual_extraction.py path/to/syllabus.pdf --normalized-only
+```
+
+Default output shows two sections: raw extracted text (after strip) and **normalized** text (`normalize_text`, the string passed to `main.parse` on a cache miss). `--normalized-only` prints only the normalized section. `--output` writes to a file instead of stdout (useful for long PDFs).
+
+### Diagnostic workflow (e.g. lab schedule PDFs)
+
+1. Run the preview on the **same local file** you would upload.
+2. Inspect whether schedule **dates** and **row structure** survived extraction (search for date strings, lab session labels, table-like lines).
+3. **If dates are missing or detached in the preview** → the problem is likely **PDF/DOCX extraction or table formatting** (pypdf layout, scanned pages, DOCX tables not in paragraphs), not the parser.
+4. **If dates and rows look correct in the preview but ingest items have `start_date: null`** → the problem is likely **parser prompt, schema, or item taxonomy** (separate follow-up work).
+
+Then ingest with a fictional `course_key`, `sync_to_notion=false`, and compare items to the preview. Do not commit real syllabi, `*.preview.txt` output, or parser smoke JSON (e.g. `biol350-model-mini.json`).
+
+---
+
 ## Compare parse models (dev)
 
 To compare different OpenAI parser models on persisted ingests:
@@ -166,7 +199,8 @@ See [README.md](../README.md#example-responses) for a full JSON example.
 
 ## What not to commit
 
-- Real syllabi, uploads, or local `syllabus.txt` used for demos
+- Real syllabi, uploads, local `syllabus.txt` used for demos, or `*.preview.txt` extraction previews
+- Parser smoke output JSON (e.g. local model comparison files)
 - `.env`, `APIs.env`, or any file with API keys or tokens
 - `app.db` or other `*.db` files
 - Canvas personal access tokens in shared repos
@@ -185,6 +219,7 @@ See [README.md](../README.md#example-responses) for a full JSON example.
 | `400` No syllabus text provided | Empty or whitespace-only text/file | Provide non-empty syllabus content |
 | `400` Unsupported file type | Extension not `.txt`, `.pdf`, `.docx` | Rename or convert file |
 | Second ingest still calls OpenAI / `changed: true` | Text normalization differs from first run | Use identical text; check extra whitespace |
+| PDF ingest items missing dates but PDF looks fine visually | Dates lost in extraction, not in the LLM | Run [preview script](#preview-extracted-file-text-locally-dev) on the local PDF first |
 
 **Costs:** First ingest for new content calls OpenAI (`gpt-4o-mini`). Identical re-ingest uses the snapshot cache (no second parse).
 

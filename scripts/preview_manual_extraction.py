@@ -33,7 +33,10 @@ def build_output(extracted: str, *, normalized_only: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Preview text extracted from a manual syllabus file (.txt, .pdf, .docx).",
+        description=(
+            "Preview text extracted from a manual syllabus file (.txt, .pdf, .docx). "
+            "Local dev only: no OpenAI, no DB. Do not commit real syllabi or --output files."
+        ),
     )
     parser.add_argument(
         "path",
@@ -43,7 +46,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--normalized-only",
         action="store_true",
-        help="Print only normalized text (what main.parse would receive)",
+        help=(
+            "Print only normalize_text output (ingest ParseRequest.text; "
+            "before in-parse preprocess)"
+        ),
     )
     parser.add_argument(
         "--output",
