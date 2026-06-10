@@ -153,6 +153,203 @@ def has_relative_date_language(*texts: str) -> bool:
     return False
 
 
+STANDALONE_PRELAB_QUIZ_TITLE_RE = re.compile(
+    r"^pre-?\s*lab\s+quiz\s+\d+\b",
+    re.IGNORECASE,
+)
+
+PRELAB_QUIZ_DUE_LANGUAGE_RE = re.compile(
+    r"\b(?:"
+    r"due|deadline|submit(?:ted|tal)?|submission|due\s+date|"
+    r"open(?:s|ing)?(?:\s+(?:on|date))?|closes?|available\s+until|"
+    r"complete\s+by|must\s+be\s+(?:completed|submitted)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+PRELAB_QUIZ_METADATA_RE = re.compile(r"\bpre-?\s*lab\s+quiz\b", re.IGNORECASE)
+
+NO_PRELAB_QUIZ_ROW_RE = re.compile(
+    r"^no\s+(?:pre-?\s*lab|prep)\s+quiz\b",
+    re.IGNORECASE,
+)
+LAB_PRACTICAL_ROW_START_RE = re.compile(r"^lab\s+practical\b", re.IGNORECASE)
+
+
+def is_standalone_undated_prelab_quiz_item(item: dict) -> bool:
+    title = (item.get("title") or "").strip()
+    if not STANDALONE_PRELAB_QUIZ_TITLE_RE.match(title):
+        return False
+
+    if item.get("start_date") or item.get("due_date"):
+        return False
+
+    item_text = f"{item.get('title') or ''} {item.get('description') or ''}"
+    if PRELAB_QUIZ_DUE_LANGUAGE_RE.search(item_text):
+        return False
+
+    return True
+
+
+def _extract_prelab_quiz_from_row_tail(tail: str) -> Optional[str]:
+    if not tail:
+        return None
+
+    normalized_tail = re.sub(r"\s+", " ", tail.strip())
+    if not normalized_tail:
+        return None
+
+    if NO_PRELAB_QUIZ_ROW_RE.match(normalized_tail):
+        return "none"
+
+    if LAB_PRACTICAL_ROW_START_RE.match(normalized_tail):
+        return None
+
+    quiz_before_lab_practical = re.match(
+        r"^(\d{1,2})\s+lab\s+practical\b",
+        normalized_tail,
+        re.IGNORECASE,
+    )
+    if quiz_before_lab_practical:
+        return quiz_before_lab_practical.group(1)
+
+    quiz_before_experiment = re.match(
+        r"^(\d{1,2})\s+(\d{1,2}):",
+        normalized_tail,
+    )
+    if quiz_before_experiment:
+        return quiz_before_experiment.group(1)
+
+    quiz_before_alphanumeric_experiment = re.match(
+        r"^(\d{1,2})\s+\d{1,2}[A-Za-z]:",
+        normalized_tail,
+    )
+    if quiz_before_alphanumeric_experiment:
+        return quiz_before_alphanumeric_experiment.group(1)
+
+    quiz_before_topic_number = re.match(
+        r"^(\d{1,2})\s+(\d{1,2})\s+(?!continued\b)",
+        normalized_tail,
+        re.IGNORECASE,
+    )
+    if quiz_before_topic_number:
+        return quiz_before_topic_number.group(1)
+
+    quiz_before_continued_experiment = re.match(
+        r"^(\d{1,2})\s+(\d{1,2})\s+continued\b",
+        normalized_tail,
+        re.IGNORECASE,
+    )
+    if quiz_before_continued_experiment:
+        return quiz_before_continued_experiment.group(1)
+
+    if re.match(r"^\d{1,2}\s+continued\b", normalized_tail, re.IGNORECASE):
+        return None
+
+    quiz_before_text_topic = re.match(
+        r"^(\d{1,2})\s+(?!continued\b)(?:topic\b|[A-Za-z])",
+        normalized_tail,
+        re.IGNORECASE,
+    )
+    if quiz_before_text_topic:
+        return quiz_before_text_topic.group(1)
+
+    return None
+
+
+def parse_lab_prelab_quiz_map(source_text: str) -> dict[int, str]:
+    if not source_text:
+        return {}
+
+    if not LAB_SCHEDULE_ANCHOR_RE.search(source_text):
+        return {}
+
+    schedule_text = preprocess_lab_schedule_rows(source_text)
+    anchor_match = LAB_SCHEDULE_ANCHOR_RE.search(schedule_text)
+    if not anchor_match:
+        return {}
+
+    region = schedule_text[anchor_match.start() :]
+    heads = list(LAB_SCHEDULE_ROW_HEAD_RE.finditer(region))
+    if len(heads) < 2:
+        return {}
+
+    quiz_map: dict[int, str] = {}
+    for index, match in enumerate(heads):
+        lab_number_match = re.search(r"Lab\s+(\d{1,2})\b", match.group(), re.IGNORECASE)
+        if not lab_number_match:
+            continue
+
+        lab_number = int(lab_number_match.group(1))
+        tail_start = match.end()
+        tail_end = heads[index + 1].start() if index + 1 < len(heads) else len(region)
+        tail = region[tail_start:tail_end]
+        quiz_value = _extract_prelab_quiz_from_row_tail(tail)
+        if quiz_value is not None:
+            quiz_map[lab_number] = quiz_value
+
+    return quiz_map
+
+
+def _prelab_quiz_metadata_phrase(quiz_value: str) -> str:
+    if quiz_value == "none":
+        return "Pre-lab quiz: none"
+    return f"Pre-lab quiz #: {quiz_value}"
+
+
+def enrich_lab_items_with_prelab_quiz_metadata(
+    items: list[dict],
+    quiz_map: dict[int, str],
+) -> list[dict]:
+    if not quiz_map:
+        return items
+
+    enriched_items: list[dict] = []
+    for item in items:
+        if (item.get("item_type") or "").lower() != "lecture":
+            enriched_items.append(item)
+            continue
+        if (item.get("subtype") or "").lower() != "lab":
+            enriched_items.append(item)
+            continue
+
+        title = (item.get("title") or "").strip()
+        title_match = re.match(r"^Lab\s+(\d{1,2})\b", title, re.IGNORECASE)
+        if not title_match:
+            enriched_items.append(item)
+            continue
+
+        lab_number = int(title_match.group(1))
+        quiz_value = quiz_map.get(lab_number)
+        if quiz_value is None:
+            enriched_items.append(item)
+            continue
+
+        description = item.get("description") or ""
+        if PRELAB_QUIZ_METADATA_RE.search(description):
+            enriched_items.append(item)
+            continue
+
+        metadata_phrase = _prelab_quiz_metadata_phrase(quiz_value)
+        updated_item = dict(item)
+        if description:
+            updated_item["description"] = f"{description.rstrip('.')}. {metadata_phrase}."
+        else:
+            updated_item["description"] = f"{metadata_phrase}."
+        enriched_items.append(updated_item)
+
+    return enriched_items
+
+
+def cleanup_standalone_undated_prelab_quizzes(
+    items: list[dict],
+    source_text: str,
+) -> list[dict]:
+    quiz_map = parse_lab_prelab_quiz_map(source_text)
+    kept_items = [item for item in items if not is_standalone_undated_prelab_quiz_item(item)]
+    return enrich_lab_items_with_prelab_quiz_metadata(kept_items, quiz_map)
+
+
 def sanitize_extracted_item_dates(
     item: dict,
     source_text: str,
