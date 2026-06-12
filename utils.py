@@ -350,6 +350,61 @@ def cleanup_standalone_undated_prelab_quizzes(
     return enrich_lab_items_with_prelab_quiz_metadata(kept_items, quiz_map)
 
 
+# Shared due/deadline/submission anchor language (same pattern as pre-lab quiz cleanup).
+DUE_ANCHOR_LANGUAGE_RE = PRELAB_QUIZ_DUE_LANGUAGE_RE
+
+# Pop quizzes are unannounced by definition; an undated one with no due anchor is
+# a grading-breakdown label, not a plannable event.
+POP_QUIZ_TITLE_RE = re.compile(r"^pop\s+quiz\b", re.IGNORECASE)
+
+# Phrases that strongly indicate a grading-policy / SLO / assessment-strategy
+# artifact rather than a scheduled course event. Deliberately narrow: bare words
+# like "quiz" or "reading" must never trigger suppression on their own.
+POLICY_ARTIFACT_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"\bgrading\s+(?:policy|policies|breakdown|weights?|scale)\b"
+    r"|\bgrade\s+breakdown\b"
+    r"|\bassessment\s+strateg(?:y|ies)\b"
+    r"|\b(?:student\s+)?learning\s+outcomes?\b"
+    r"|\bSLOs?\b"
+    r"|\boutcomes?\s+\d+\b"
+    r")",
+    re.IGNORECASE,
+)
+
+# Subtypes that represent real assessments students must plan for even when the
+# syllabus only mentions them in grading text without a date.
+_NEVER_SUPPRESS_SUBTYPES = {"midterm", "final"}
+
+
+def is_undated_policy_artifact_item(item: dict) -> bool:
+    """True only for undated grading-policy/SLO/assessment-strategy artifacts.
+
+    Conservative by design: never matches items with a start_date or due_date,
+    items with due/deadline/submission language, or midterm/final subtypes.
+    """
+    if item.get("start_date") or item.get("due_date"):
+        return False
+
+    if (item.get("subtype") or "").strip().lower() in _NEVER_SUPPRESS_SUBTYPES:
+        return False
+
+    item_text = " ".join(
+        part for part in (item.get("title"), item.get("description"), item.get("location")) if part
+    )
+    if DUE_ANCHOR_LANGUAGE_RE.search(item_text):
+        return False
+
+    if POP_QUIZ_TITLE_RE.match((item.get("title") or "").strip()):
+        return True
+
+    return POLICY_ARTIFACT_CONTEXT_RE.search(item_text) is not None
+
+
+def cleanup_undated_policy_artifact_items(items: list[dict]) -> list[dict]:
+    return [item for item in items if not is_undated_policy_artifact_item(item)]
+
+
 def sanitize_extracted_item_dates(
     item: dict,
     source_text: str,

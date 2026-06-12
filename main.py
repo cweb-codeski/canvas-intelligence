@@ -18,6 +18,7 @@ from models import AssignmentDetail, Course, Item, SourceSnapshot
 from notion import check_notion_config, create_notion_item  # noqa: F401
 from utils import (
     cleanup_standalone_undated_prelab_quizzes,
+    cleanup_undated_policy_artifact_items,
     hash_item,
     hash_text,
     normalize_text,
@@ -1057,6 +1058,7 @@ Text:
 
     items = [sanitize_extracted_item_dates(item, req.text, req.term) for item in parsed["items"]]
     items = cleanup_standalone_undated_prelab_quizzes(items, req.text)
+    items = cleanup_undated_policy_artifact_items(items)
 
     avg_conf = sum(i.get("confidence", 0) for i in items) / len(items) if items else 0.0
 
