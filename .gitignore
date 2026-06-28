@@ -24,3 +24,9 @@ app.db
 
 # Local manual file extraction previews (scripts/preview_manual_extraction.py --output)
 *.preview.txt
+
+# Local benchmark outputs (real syllabus content; never commit)
+bench-*.json
+*-cleanup-check-*.json
+*-default-gpt*-audit-*.json
+.bench-preview-*

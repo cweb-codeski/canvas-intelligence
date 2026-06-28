@@ -52,7 +52,7 @@ This service is a single-user MVP academic planner **ingestion engine**. Multipl
 
 1. Normalize text and compute a content hash
 2. Compare against the latest `SourceSnapshot` for the course
-3. If changed: run LLM extraction (default `gpt-4o-mini`, override with `OPENAI_PARSE_MODEL`), validate JSON schema, filter low-confidence items
+3. If changed: run LLM extraction (default `gpt-5.4-mini`, override with `OPENAI_PARSE_MODEL`), validate JSON schema, filter low-confidence items
 4. Persist snapshot and `Item` rows in SQLite
 5. Optionally sync items to a Notion database
 
@@ -75,7 +75,7 @@ flowchart TD
   subgraph engine [Shared ingestion engine]
     Normalize[normalize_text + hash]
     Snapshot[SourceSnapshot compare]
-    LLM[OpenAI parse (default gpt-4o-mini, override OPENAI_PARSE_MODEL)]
+    LLM[OpenAI parse (default gpt-5.4-mini, override OPENAI_PARSE_MODEL)]
     Filter[should_keep_item]
     Persist[(SQLite app.db)]
   end
@@ -191,7 +191,7 @@ Copy [.env.example](.env.example) to `.env`. Prefer a `.env` file over exporting
 | Variable | Required when | Notes |
 |----------|---------------|-------|
 | `OPENAI_API_KEY` | **Always** | Missing → `RuntimeError` at import; app will not start |
-| `OPENAI_PARSE_MODEL` | Optional | OpenAI model for `main.parse()` / `POST /parse` (LLM extraction only). Default `gpt-4o-mini` |
+| `OPENAI_PARSE_MODEL` | Optional | OpenAI model for `main.parse()` / `POST /parse` (LLM extraction only). Default `gpt-5.4-mini` |
 | `ENABLE_NOTION_SYNC` | Optional | Default in code: `true`. Set `false` for local dev and tests |
 | `NOTION_API_KEY` | Notion check/sync (`ENABLE_NOTION_SYNC=true`) | Required when calling `GET /notion/status` or syncing items; not required to start the app |
 | `NOTION_DATABASE_ID` | Notion check/sync (`ENABLE_NOTION_SYNC=true`) | Same as `NOTION_API_KEY` |
@@ -519,7 +519,7 @@ Use [.env.example](.env.example) for placeholders only.
 - **Single-user MVP** — no authentication or multi-tenant isolation
 - **SQLite** — `sqlite:///./app.db`; not ideal for concurrent multi-writer production
 - **Canvas auth** — personal access token in env; school-approved OAuth is the intended future direction
-- **LLM extraction** — uses `gpt-4o-mini` by default (configurable via `OPENAI_PARSE_MODEL`); affects parser calls only; may omit or mis-parse items; `should_keep_item` filters low-quality rows
+- **LLM extraction** — uses `gpt-5.4-mini` by default (configurable via `OPENAI_PARSE_MODEL`); affects parser calls only; may omit or mis-parse items; `should_keep_item` filters low-quality rows
 - **Dates** — model must not invent dates; `term` helps infer year only when rules in the parse prompt allow it
 - **Assignment vs syllabus snapshots** — separate; unchanged syllabus may still trigger Notion sync for changed assignment feed
 - **Syllabus heuristics** — nonstandard Canvas layouts may return **404**
