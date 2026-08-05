@@ -1,8 +1,28 @@
 # Academic Planner Ingestion API
 
-**canvas-parser-service** — a source-agnostic FastAPI backend that ingests academic source material, extracts structured items (exams, assignments, readings, lectures), persists snapshots in SQLite, and optionally syncs to Notion.
+**canvas-parser-service** — a source-agnostic FastAPI backend that ingests academic source material, extracts structured planner items (exams, assignments, readings, lectures), persists versioned snapshots in SQLite, and optionally syncs to Notion.
+
+> **Project status:** This repository is maintained as an **engineering portfolio piece**, not an active product. The original Canvas-to-Notion planner direction was paused after market-fit and trust concerns. The codebase remains a working reference implementation of ingestion, LLM extraction with guardrails, and quality evaluation.
 
 Manual syllabus **paste** and **file upload** work without Canvas credentials. Canvas is an optional source adapter.
+
+---
+
+## What this demonstrates
+
+Use this repo to evaluate backend and LLM-system design, not a shipped consumer product.
+
+| Area | What to look at |
+|------|-----------------|
+| **Adapter architecture** | One shared ingestion engine (`ingestion.py`) fed by manual paste, file upload, and Canvas adapters (`main.py`) |
+| **Change detection** | Content hashing + `SourceSnapshot` caching to skip repeat OpenAI calls on unchanged syllabi |
+| **LLM guardrails** | JSON schema validation, date sanitization against source text, conservative post-parse cleanup (`utils.py`) |
+| **Deterministic paths** | Canvas assignment feed normalized without LLM; syllabus text parsed with LLM only on cache miss |
+| **Transactional persistence** | Snapshot + items persisted atomically (SAVEPOINT) so failed inserts do not poison the cache |
+| **Test discipline** | 140+ pytest cases; CI runs offline with mocked OpenAI/Canvas; isolated SQLite per test |
+| **Evaluation harness** | Opt-in fixture-based precision/recall runner ([`evals/`](evals/README.md)) for measuring extraction quality |
+
+**Tech stack:** Python 3.11+, FastAPI, SQLAlchemy, SQLite, OpenAI API, optional Canvas LMS API, optional Notion API.
 
 ---
 
@@ -52,7 +72,7 @@ This service is a single-user MVP academic planner **ingestion engine**. Multipl
 
 1. Normalize text and compute a content hash
 2. Compare against the latest `SourceSnapshot` for the course
-3. If changed: run LLM extraction (default `gpt-5.4-mini`, override with `OPENAI_PARSE_MODEL`), validate JSON schema, filter low-confidence items
+3. If changed: run LLM extraction (default `gpt-5.4-mini`, override with `OPENAI_PARSE_MODEL`), validate JSON schema, and filter/cleanup items (`should_keep_item`, date sanitization, and conservative suppression rules)
 4. Persist snapshot and `Item` rows in SQLite
 5. Optionally sync items to a Notion database
 
@@ -67,21 +87,21 @@ Design principles: deterministic hashing over ad hoc parsing, schema validation 
 ```mermaid
 flowchart TD
   subgraph adapters [Source adapters]
-    ManualPaste[POST manual/syllabus]
-    ManualFile[POST manual/syllabus/file]
-    CanvasIngest[POST canvas/ingest]
+    ManualPaste["POST /manual/syllabus"]
+    ManualFile["POST /manual/syllabus/file"]
+    CanvasIngest["POST /canvas/ingest"]
   end
 
   subgraph engine [Shared ingestion engine]
-    Normalize[normalize_text + hash]
-    Snapshot[SourceSnapshot compare]
-    LLM[OpenAI parse (default gpt-5.4-mini, override OPENAI_PARSE_MODEL)]
-    Filter[should_keep_item]
-    Persist[(SQLite app.db)]
+    Normalize["normalize_text + hash"]
+    Snapshot["SourceSnapshot compare"]
+    LLM["OpenAI parse (default gpt-5.4-mini, override OPENAI_PARSE_MODEL)"]
+    Filter["should_keep_item"]
+    Persist[("SQLite app.db")]
   end
 
   subgraph optional [Optional]
-    NotionSync[Notion API]
+    NotionSync["Notion API"]
   end
 
   ManualPaste --> Normalize
@@ -473,6 +493,22 @@ python -m ruff check .
 python -m ruff format --check .
 ```
 
+CI runs pytest and ruff on every push (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+### Evaluation harness
+
+An opt-in harness measures extraction quality over a fixed fixture corpus. CI does **not** call OpenAI; live runs are manual.
+
+```bash
+# Live parse (requires OPENAI_API_KEY)
+python scripts/run_eval.py --cases evals/cases --live --output evals/runs/latest.json
+
+# Offline metrics from a saved predictions file
+python scripts/run_eval.py --cases evals/cases --predictions evals/runs/latest.json --output evals/runs/report.json
+```
+
+See [`evals/README.md`](evals/README.md) for fixture format and layout. Outputs under `evals/runs/` are gitignored.
+
 ### Test conventions
 
 - Tests set `OPENAI_API_KEY=test-openai-key` and usually `ENABLE_NOTION_SYNC=false`.
@@ -488,6 +524,7 @@ python -m ruff format --check .
 | `test_db_isolation.py` | TestClient uses isolated DB via `get_db` override |
 | `test_manual_syllabus.py` | Paste, snapshots, empty text 400 |
 | `test_golden_syllabus_ingest.py` | Golden syllabus fixture; multi-item ingest regression (mocked parse) |
+| `test_transactional_persistence.py` | Snapshot rollback when item insert fails |
 | `test_manual_syllabus_file.py` | txt/pdf/docx upload, unsupported types |
 | `test_extraction_preview_script.py` | Local `preview_manual_extraction.py` CLI (txt/docx, flags) |
 | `test_canvas_config.py` | Start without Canvas; 503 on ingest |
@@ -514,20 +551,44 @@ Use [.env.example](.env.example) for placeholders only.
 
 ---
 
+## Project structure
+
+```text
+main.py            # FastAPI app, Canvas adapter, OpenAI parse, assignment persistence
+ingestion.py       # Shared syllabus ingest engine (snapshots, filter, Notion wiring)
+models.py          # SQLAlchemy models (Course, SourceSnapshot, Item, AssignmentDetail)
+db.py              # SQLite engine and sessions
+utils.py           # Normalization, hashing, date sanitization, post-parse cleanup
+notion.py          # Notion API sync and config checks
+scripts/
+  preview_manual_extraction.py   # Local PDF/DOCX/txt extraction preview (no OpenAI)
+  run_eval.py                    # Opt-in extraction quality harness
+evals/             # Fixture corpus + harness docs (runs/ is gitignored)
+tests/             # pytest suite (140+ cases)
+docs/MANUAL_DEMO.md
+.env.example
+Dockerfile
+AGENTS.md          # Contributor and agent workflow notes
+```
+
+---
+
 ## Known limitations
 
-- **Single-user MVP** — no authentication or multi-tenant isolation
+This is intentionally scoped as a single-user reference implementation.
+
+- **Not a production product** — no auth, multi-tenancy, or hosted deployment story
 - **SQLite** — `sqlite:///./app.db`; not ideal for concurrent multi-writer production
-- **Canvas auth** — personal access token in env; school-approved OAuth is the intended future direction
-- **LLM extraction** — uses `gpt-5.4-mini` by default (configurable via `OPENAI_PARSE_MODEL`); affects parser calls only; may omit or mis-parse items; `should_keep_item` filters low-quality rows
-- **Dates** — model must not invent dates; `term` helps infer year only when rules in the parse prompt allow it
+- **Canvas auth** — personal access token in env; school-approved OAuth would be required for multi-user
+- **LLM extraction** — default `gpt-5.4-mini` (override with `OPENAI_PARSE_MODEL`); may omit or mis-parse items; post-parse filters reduce noise but do not guarantee completeness
+- **Dates** — model must not invent dates; `term` helps infer year only when source text supports it; `sanitize_extracted_item_dates` enforces conservative rules
 - **Assignment vs syllabus snapshots** — separate; unchanged syllabus may still trigger Notion sync for changed assignment feed
 - **Syllabus heuristics** — nonstandard Canvas layouts may return **404**
 - **PDF/DOCX** — extraction quality varies; scanned PDFs are often poor
 - **`course_key`** — stored in DB column `canvas_course_id` (historical name)
 - **`POST /parse`** — no persistence; only ingest endpoints write snapshots/items
 - **Notion schema** — fixed property names; mismatches reported by `/notion/status`
-- **HTTP timeouts** — 10s for external APIs; very large courses rely on pagination helpers tested in `test_canvas_*`
+- **HTTP timeouts** — 10s for external APIs
 
 ---
 
@@ -540,33 +601,12 @@ Use [.env.example](.env.example) for placeholders only.
 
 ---
 
-## Project structure
+## Design notes (for reviewers)
 
-```text
-main.py            # FastAPI app, adapters, ingestion pipeline, OpenAI parse
-models.py          # SQLAlchemy models (Course, SourceSnapshot, Item, details)
-db.py              # SQLite engine and sessions (creates app.db)
-utils.py           # Normalization and hashing
-notion.py          # Notion API sync and config checks
-requirements.txt   # Runtime and dev dependencies
-.env.example       # Environment template
-Dockerfile         # Container image (port 8080)
-tests/             # pytest suite
-AGENTS.md          # Agent and contributor instructions
-```
+**Why snapshot caching?** Syllabus text is expensive to re-parse and often unchanged between ingests. Hashing normalized text and replaying cached `Item` rows avoids redundant LLM calls while keeping a version history per source change.
 
----
+**Why separate Canvas assignments from syllabus parsing?** Canvas assignment feeds are structured API data with stable IDs and due dates. Treating them deterministically (confidence 0.98) avoids hallucination on the highest-trust deadline source.
 
-## Tech stack
+**Why post-parse cleanup instead of only prompt rules?** Syllabus formats vary too much to rely on prompts alone. Small, testable functions (`sanitize_extracted_item_dates`, policy-artifact suppression, pre-lab quiz cleanup) handle known failure modes without re-prompting.
 
-Python, FastAPI, SQLAlchemy, SQLite, OpenAI API, optional Canvas LMS API, optional Notion API.
-
----
-
-## Future improvements
-
-- Multi-user support and authentication
-- PostgreSQL migration
-- Background job queue
-- School-approved Canvas OAuth
-- Frontend dashboard for course visualization
+**Why an eval harness?** Parser changes are hard to judge by eye. The harness provides repeatable precision/recall metrics over a growing fixture set, separate from unit tests that mock the LLM.
